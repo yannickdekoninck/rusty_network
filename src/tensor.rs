@@ -57,11 +57,11 @@ impl Tensor {
         return return_val;
     }
 
-    fn get_data_index(self: &Self, index: &TensorIndex) -> u32 {
+    pub fn get_data_index(self: &Self, index: &TensorIndex) -> u32 {
         return &self.strides * &index;
     }
 
-    fn add(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
+    pub fn add(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
         if (tensor1.shape == tensor2.shape) && (tensor1.shape == result.shape) {
             // Create operants iterator
             let operants = tensor1.data.iter().zip(tensor2.data.iter());
@@ -72,13 +72,36 @@ impl Tensor {
         }
     }
 
-    fn scale(tensor: &Tensor, scalar: f32, result: &mut Tensor) {
+    pub fn scale(tensor: &Tensor, scalar: f32, result: &mut Tensor) {
         if tensor.shape == result.shape {
             // Loop through items and calculate results
             for (rs, op) in result.data.iter_mut().zip(tensor.data.iter()) {
                 *rs = *op * scalar;
             }
         }
+    }
+    pub fn matrix_multiply(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
+        // Check if the dimensions allow for matrix multiplication
+        if Tensor::check_matrix_multiply_dimensions(tensor1, tensor2, result) {}
+    }
+
+    fn check_matrix_multiply_dimensions(
+        tensor1: &Tensor,
+        tensor2: &Tensor,
+        result: &Tensor,
+    ) -> bool {
+        let st1 = tensor1.shape.get();
+        let st2 = tensor2.shape.get();
+        let sr = result.shape.get();
+        // Outer dimensions must be the same
+        if st1.2 != st2.2 || st1.2 != sr.2 {
+            return false;
+        }
+        // Inner dimensions must match
+        if st1.1 != st2.0 || st1.0 != sr.0 || st2.1 != sr.1 {
+            return false;
+        }
+        return true;
     }
 }
 
@@ -180,5 +203,25 @@ mod test {
         Tensor::scale(&t1, scalar, &mut result);
 
         assert_eq!(expected_result, result);
+    }
+
+    #[test]
+    fn test_matrix_multiply_shape_check() {
+        let shape_1 = TensorShape::new(5, 6, 7);
+        let shape_2 = TensorShape::new(6, 8, 7);
+        let shape_res = TensorShape::new(5, 8, 7);
+        let tensor_1 = Tensor::new(shape_1);
+        let tensor_2 = Tensor::new(shape_2);
+        let tensor_res = Tensor::new(shape_res);
+        assert!(Tensor::check_matrix_multiply_dimensions(
+            &tensor_1,
+            &tensor_2,
+            &tensor_res
+        ));
+        assert!(!Tensor::check_matrix_multiply_dimensions(
+            &tensor_2,
+            &tensor_1,
+            &tensor_res
+        ));
     }
 }

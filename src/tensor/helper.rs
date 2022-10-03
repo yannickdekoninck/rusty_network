@@ -53,6 +53,10 @@ impl TensorShape {
         }
         return true;
     }
+
+    pub fn get(self: &Self) -> (u32, u32, u32) {
+        return (self.di, self.dj, self.dk);
+    }
 }
 
 // Structure to index into a tensor
