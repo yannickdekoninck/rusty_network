@@ -71,6 +71,15 @@ impl Tensor {
             }
         }
     }
+
+    fn scale(tensor: &Tensor, scalar: f32, result: &mut Tensor) {
+        if tensor.shape == result.shape {
+            // Loop through items and calculate results
+            for (rs, op) in result.data.iter_mut().zip(tensor.data.iter()) {
+                *rs = *op * scalar;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -147,6 +156,28 @@ mod test {
             data: vec![3.0, 5.0, 7.0, 9.0, 11.0, 13.0],
         };
         Tensor::add(&t1, &t2, &mut result);
+
+        assert_eq!(expected_result, result);
+    }
+
+    #[test]
+    fn test_tensor_scale() {
+        let shape = TensorShape::new(2, 3, 1);
+        let t1 = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        };
+        let scalar = 2.0;
+
+        let mut result = Tensor::new(shape);
+
+        let expected_result = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0],
+        };
+        Tensor::scale(&t1, scalar, &mut result);
 
         assert_eq!(expected_result, result);
     }
