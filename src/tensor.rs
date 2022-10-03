@@ -82,7 +82,34 @@ impl Tensor {
     }
     pub fn matrix_multiply(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
         // Check if the dimensions allow for matrix multiplication
-        if Tensor::check_matrix_multiply_dimensions(tensor1, tensor2, result) {}
+        let sr = result.shape.get();
+        let s1 = tensor1.shape.get();
+        if Tensor::check_matrix_multiply_dimensions(tensor1, tensor2, result) {
+            // Loop over the outer dimension
+            for k in 0..sr.2 {
+                for j in 0..sr.1 {
+                    for i in 0..sr.0 {
+                        let mut running_result = 0.0;
+
+                        // inner adder loop
+
+                        for ii in 0..s1.1 {
+                            let get_index1 =
+                                tensor1.get_data_index(&TensorIndex { i: i, j: ii, k: k }) as usize;
+
+                            let get_index2 =
+                                tensor2.get_data_index(&TensorIndex { i: ii, j: j, k: k }) as usize;
+
+                            running_result += tensor1.data[get_index1] * tensor2.data[get_index2];
+                        }
+
+                        let set_index =
+                            result.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+                        result.data[set_index] = running_result;
+                    }
+                }
+            }
+        }
     }
 
     fn check_matrix_multiply_dimensions(
@@ -205,6 +232,33 @@ mod test {
         assert_eq!(expected_result, result);
     }
 
+    #[test]
+    fn test_tensor_matrix_multiply() {
+        let shape_1 = TensorShape::new(2, 3, 1);
+        let shape_2 = TensorShape::new(3, 3, 1);
+        let shape_res = TensorShape::new(2, 3, 1);
+        let t1 = Tensor {
+            shape: shape_1,
+            strides: TensorStride::new_from_shape(&shape_1),
+            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        };
+        let t2 = Tensor {
+            shape: shape_2,
+            strides: TensorStride::new_from_shape(&shape_2),
+            data: vec![1.0; 9],
+        };
+
+        let mut result = Tensor::new(shape_res);
+
+        let expected_result = Tensor {
+            shape: shape_res,
+            strides: TensorStride::new_from_shape(&shape_res),
+            data: vec![9.0, 12.0, 9.0, 12.0, 9.0, 12.0],
+        };
+        Tensor::matrix_multiply(&t1, &t2, &mut result);
+
+        assert_eq!(expected_result, result);
+    }
     #[test]
     fn test_matrix_multiply_shape_check() {
         let shape_1 = TensorShape::new(5, 6, 7);
