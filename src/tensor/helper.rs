@@ -1,6 +1,7 @@
 use std::cmp;
 use std::ops;
 // Structure to define the shape of a tensor
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub struct TensorShape {
     di: u32,
     dj: u32,
