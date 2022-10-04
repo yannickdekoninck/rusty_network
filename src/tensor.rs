@@ -130,6 +130,67 @@ impl Tensor {
         }
         return true;
     }
+
+    fn check_convolution_dimensions(
+        image: &Tensor,
+        kernel: &Tensor,
+        stride: u32,
+        result: &Tensor,
+        result_channel: u32,
+    ) -> bool {
+        // Todo:    pass shape references instead of tensor references
+        //          this should reduce the number of shape.get() calls
+        //          since we will do these in the convolution code
+        //          anyway
+
+        let result_shape = result.shape.get();
+        let kernel_shape = kernel.shape.get();
+        let image_shape = image.shape.get();
+
+        // We check and immediately exit when something is not right
+        // No need to check anything else
+
+        // image and kernel depth must match
+        if image_shape.2 != kernel_shape.2 {
+            return false;
+        }
+
+        // Check if the kernel fitst in the image given the stride
+        // We assume that the image is properly padded
+        if (image_shape.0 - kernel_shape.0) % stride != 0 {
+            return false;
+        }
+        if (image_shape.1 - kernel_shape.1) % stride != 0 {
+            return false;
+        }
+
+        // Check if the output dimensions are correct
+        let dim0_kernel_fits = (image_shape.0 - kernel_shape.0) / stride + 1;
+        let dim1_kernel_fits = (image_shape.1 - kernel_shape.1) / stride + 1;
+        if result_shape.0 != dim0_kernel_fits {
+            return false;
+        }
+        if result_shape.1 != dim1_kernel_fits {
+            return false;
+        }
+
+        // check if the result channel is valid
+        if result_channel >= result_shape.2 {
+            return false;
+        }
+
+        return true;
+    }
+
+    pub fn convolution(
+        image: &Tensor,
+        kernel: &Tensor,
+        stride: u32,
+        result: &mut Tensor,
+        result_channel: u32,
+    ) {
+        return;
+    }
 }
 
 #[cfg(test)]
@@ -276,6 +337,33 @@ mod test {
             &tensor_2,
             &tensor_1,
             &tensor_res
+        ));
+    }
+
+    #[test]
+    fn test_convolution_check_dimensions() {
+        let shape_input = TensorShape::new(17, 25, 7);
+        let shape_kernel = TensorShape::new(3, 3, 7);
+        let shape_result = TensorShape::new(8, 12, 3);
+        let stride: u32 = 2;
+        let result_channel: u32 = 1;
+        let tensor_image = Tensor::new(shape_input);
+        let tensor_kernel = Tensor::new(shape_kernel);
+        let tensor_result = Tensor::new(shape_result);
+
+        assert!(Tensor::check_convolution_dimensions(
+            &tensor_image,
+            &tensor_kernel,
+            stride,
+            &tensor_result,
+            result_channel
+        ));
+        assert!(!Tensor::check_convolution_dimensions(
+            &tensor_image,
+            &tensor_kernel,
+            stride + 1,
+            &tensor_result,
+            result_channel
         ));
     }
 }
