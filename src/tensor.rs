@@ -61,6 +61,10 @@ impl Tensor {
         return &self.strides * &index;
     }
 
+    pub fn get_shape(self: &Self) -> TensorShape {
+        return self.shape.clone();
+    }
+
     pub fn add(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
         if (tensor1.shape == tensor2.shape) && (tensor1.shape == result.shape) {
             // Create operants iterator
@@ -131,7 +135,7 @@ impl Tensor {
         return true;
     }
 
-    fn matrix_multiply_add_relu(
+    pub fn matrix_multiply_add_relu(
         input: &Tensor,
         weights: &Tensor,
         bias: &Tensor,
