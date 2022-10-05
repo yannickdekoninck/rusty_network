@@ -189,12 +189,54 @@ impl Tensor {
         result: &mut Tensor,
         result_channel: u32,
     ) {
-        return;
+        if Tensor::check_convolution_dimensions(image, kernel, stride, result, result_channel) {
+            // All clear to convolute!
+
+            let result_shape = result.shape.get();
+            let kernel_shape = kernel.shape.get();
+
+            // Main loop over image
+            for j in 0..result_shape.1 {
+                for i in 0..result_shape.0 {
+                    let mut convolution_result: f32 = 0.0;
+                    let image_start_i = i * stride;
+                    let image_start_j = j * stride;
+
+                    // Loop over kernel dimensions and multiply - add
+                    for kk in 0..kernel_shape.2 {
+                        for kj in 0..kernel_shape.1 {
+                            for ki in 0..kernel_shape.0 {
+                                let kernel_id = kernel.get_data_index(&TensorIndex {
+                                    i: ki,
+                                    j: kj,
+                                    k: kk,
+                                }) as usize;
+                                let image_id = image.get_data_index(&TensorIndex {
+                                    i: image_start_i + ki,
+                                    j: image_start_j + kj,
+                                    k: kk,
+                                }) as usize;
+                                convolution_result += image.data[image_id] * kernel.data[kernel_id];
+                            }
+                        }
+                    }
+                    let result_id = result.get_data_index(&TensorIndex {
+                        i: i,
+                        j: j,
+                        k: result_channel,
+                    }) as usize;
+
+                    result.data[result_id] = convolution_result;
+                }
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::vec;
+
     use super::*;
 
     //
@@ -365,5 +407,40 @@ mod test {
             &tensor_result,
             result_channel
         ));
+    }
+
+    #[test]
+    fn test_convolution() {
+        let shape_input = TensorShape::new(4, 4, 1);
+        let shape_kernel = TensorShape::new(3, 3, 1);
+        let shape_result = TensorShape::new(2, 2, 1);
+        let stride: u32 = 1;
+        let result_channel: u32 = 0;
+        let tensor_image = Tensor {
+            strides: TensorStride::new_from_shape(&shape_input),
+            shape: shape_input,
+            data: vec![
+                1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 0.5,
+            ],
+        };
+        let tensor_kernel = Tensor {
+            strides: TensorStride::new_from_shape(&shape_kernel),
+            shape: shape_kernel,
+            data: vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        };
+        let mut tensor_result = Tensor::new(shape_result);
+        let tensor_expected_result = Tensor {
+            strides: TensorStride::new_from_shape(&shape_result),
+            shape: shape_result,
+            data: vec![3.0, 2.0, 0.0, 2.5],
+        };
+        Tensor::convolution(
+            &tensor_image,
+            &tensor_kernel,
+            stride,
+            &mut tensor_result,
+            result_channel,
+        );
+        assert_eq!(tensor_result, tensor_expected_result);
     }
 }
