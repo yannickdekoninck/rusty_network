@@ -131,6 +131,59 @@ impl Tensor {
         return true;
     }
 
+    fn matrix_multiply_add_relu(
+        input: &Tensor,
+        weights: &Tensor,
+        bias: &Tensor,
+        result: &mut Tensor,
+    ) {
+        // This is a helper function to do matrix multiply. bias add and relu in a single operation
+        // This should save storing and loading of intermediate values
+        // Everything should be nice and hot in the cache
+
+        if Tensor::check_matrix_multiply_dimensions(weights, &input, &result) {
+            // Check we can do the add
+            if bias.shape == result.shape {
+                let result_shape = result.shape.get();
+                let weights_shape = weights.shape.get();
+                // Loop over the outer dimension
+                for k in 0..result_shape.2 {
+                    for j in 0..result_shape.1 {
+                        for i in 0..result_shape.0 {
+                            let mut running_result = 0.0;
+
+                            // inner matrix multiply loop
+
+                            for ii in 0..weights_shape.1 {
+                                let get_index1 =
+                                    weights.get_data_index(&TensorIndex { i: i, j: ii, k: k })
+                                        as usize;
+
+                                let get_index2 =
+                                    input.get_data_index(&TensorIndex { i: ii, j: j, k: k })
+                                        as usize;
+
+                                running_result += weights.data[get_index1] * input.data[get_index2];
+                            }
+
+                            // Add bias
+
+                            let bias_index =
+                                bias.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+                            running_result += bias.data[bias_index];
+
+                            running_result = running_result.max(0.0);
+
+                            let set_index =
+                                result.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+                            result.data[set_index] = running_result;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn check_convolution_dimensions(
         image: &Tensor,
         kernel: &Tensor,
@@ -440,6 +493,42 @@ mod test {
             stride,
             &mut tensor_result,
             result_channel,
+        );
+        assert_eq!(tensor_result, tensor_expected_result);
+    }
+
+    #[test]
+    fn test_multiply_add_relu() {
+        let shape_input = TensorShape::new(2, 1, 1);
+        let shape_weights = TensorShape::new(3, 2, 1);
+        let shape_bias = TensorShape::new(3, 1, 1);
+        let shape_result = TensorShape::new(3, 1, 1);
+        let tensor_input = Tensor {
+            strides: TensorStride::new_from_shape(&shape_input),
+            shape: shape_input,
+            data: vec![1.0, 0.5],
+        };
+        let tensor_bias = Tensor {
+            strides: TensorStride::new_from_shape(&shape_bias),
+            shape: shape_bias,
+            data: vec![1.0, 0.0, -1.0],
+        };
+        let tensor_weights = Tensor {
+            strides: TensorStride::new_from_shape(&shape_weights),
+            shape: shape_weights,
+            data: vec![1.0, 0.0, 2.0, 2.0, -1.0, 0.0],
+        };
+        let mut tensor_result = Tensor::new(shape_result);
+        let tensor_expected_result = Tensor {
+            strides: TensorStride::new_from_shape(&shape_result),
+            shape: shape_result,
+            data: vec![3.0, 0.0, 1.0],
+        };
+        Tensor::matrix_multiply_add_relu(
+            &tensor_input,
+            &tensor_weights,
+            &tensor_bias,
+            &mut tensor_result,
         );
         assert_eq!(tensor_result, tensor_expected_result);
     }
