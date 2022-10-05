@@ -3,9 +3,9 @@ use std::ops;
 // Structure to define the shape of a tensor
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub struct TensorShape {
-    di: u32,
-    dj: u32,
-    dk: u32,
+    pub di: u32,
+    pub dj: u32,
+    pub dk: u32,
 }
 
 impl TensorShape {
