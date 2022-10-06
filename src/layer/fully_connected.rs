@@ -9,14 +9,10 @@ pub struct FullyConnectedLayer {
 }
 
 impl FullyConnectedLayer {
-    pub fn new(
-        input_shape: &TensorShape,
-        output_shape: &TensorShape,
-        name: &String,
-    ) -> FullyConnectedLayer {
-        let weights = Tensor::new(TensorShape::new(output_shape.di, input_shape.di, 1));
+    pub fn new(input_size: u32, output_size: u32, name: &String) -> FullyConnectedLayer {
+        let weights = Tensor::new(TensorShape::new(output_size, input_size, 1));
         let bias: Tensor = Tensor::new(TensorShape {
-            di: output_shape.di,
+            di: output_size,
             dj: 1,
             dk: 1,
         });
