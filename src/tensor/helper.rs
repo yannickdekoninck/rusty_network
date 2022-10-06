@@ -81,7 +81,7 @@ impl TensorIndex {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TensorStride {
     pub i: u32,
     pub j: u32,
