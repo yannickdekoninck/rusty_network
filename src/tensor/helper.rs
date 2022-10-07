@@ -1,11 +1,12 @@
+use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::ops;
 // Structure to define the shape of a tensor
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct TensorShape {
-    di: u32,
-    dj: u32,
-    dk: u32,
+    pub di: u32,
+    pub dj: u32,
+    pub dk: u32,
 }
 
 impl TensorShape {
@@ -81,7 +82,7 @@ impl TensorIndex {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct TensorStride {
     pub i: u32,
     pub j: u32,
@@ -121,6 +122,22 @@ mod test {
         // Testing the ability to fix 0 dimensions
         let ts: TensorShape = TensorShape::new(0, 2, 0);
         assert_eq!(ts.total_size(), 2);
+    }
+
+    #[test]
+    fn test_tensor_shape_serialize_deserialize() {
+        let ts1 = TensorShape {
+            di: 2,
+            dj: 3,
+            dk: 5,
+        };
+        let serialized = bincode::serialize(&ts1).unwrap();
+
+        let deserialized: TensorShape = bincode::deserialize(&serialized[..]).unwrap();
+
+        assert_eq!(ts1, deserialized);
+
+        assert_eq!(serialized.len(), 12);
     }
 
     // Test is tensor stride object is properly constructed

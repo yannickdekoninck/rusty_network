@@ -3,8 +3,13 @@ pub mod helper;
 use helper::TensorIndex;
 use helper::TensorShape;
 use helper::TensorStride;
+use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fs;
+use tempdir::TempDir;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
     strides: TensorStride,
     shape: TensorShape,
@@ -59,6 +64,38 @@ impl Tensor {
 
     pub fn get_data_index(self: &Self, index: &TensorIndex) -> u32 {
         return &self.strides * &index;
+    }
+
+    pub fn get_shape(self: &Self) -> TensorShape {
+        return self.shape.clone();
+    }
+
+    pub fn fill_with_uniform(&mut self, min: f32, max: f32) {
+        let uniform_distribution = rand::distributions::Uniform::new_inclusive(min, max);
+        let mut rng = rand::prelude::thread_rng();
+        for v in &mut self.data {
+            *v = rng.sample(uniform_distribution);
+        }
+    }
+
+    pub fn fill_with_gaussian(&mut self, mean: f32, std_dev: f32) {
+        let uniform_distribution = rand_distr::Normal::new(mean, std_dev).unwrap();
+        let mut rng = rand::prelude::thread_rng();
+        for v in &mut self.data {
+            *v = rng.sample(uniform_distribution);
+        }
+    }
+
+    pub fn save_to_file(self: &Self, filename: &String) -> Result<(), Box<dyn Error>> {
+        let serialized_tensor = bincode::serialize(self)?;
+        fs::write(filename, serialized_tensor)?;
+        return Ok(());
+    }
+
+    pub fn from_file(filename: &String) -> Result<Tensor, Box<dyn Error>> {
+        let file_content = fs::read(filename)?;
+        let tensor: Tensor = bincode::deserialize(&file_content)?;
+        return Ok(tensor);
     }
 
     pub fn add(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
@@ -131,7 +168,7 @@ impl Tensor {
         return true;
     }
 
-    fn matrix_multiply_add_relu(
+    pub fn matrix_multiply_add_relu(
         input: &Tensor,
         weights: &Tensor,
         bias: &Tensor,
@@ -184,51 +221,67 @@ impl Tensor {
         }
     }
 
-    fn check_convolution_dimensions(
-        image: &Tensor,
-        kernel: &Tensor,
+    pub fn does_kernel_stride_fit_image(
+        image_shape: &TensorShape,
+        kernel_shape: &TensorShape,
         stride: u32,
-        result: &Tensor,
+    ) -> bool {
+        if (image_shape.di - kernel_shape.di) % stride != 0 {
+            return false;
+        }
+        if (image_shape.dj - kernel_shape.dj) % stride != 0 {
+            return false;
+        }
+
+        return true;
+    }
+
+    pub fn get_convolution_dim_fit(
+        image_shape: &TensorShape,
+        kernel_shape: &TensorShape,
+        stride: u32,
+    ) -> (u32, u32) {
+        let dim0_kernel_fits = (image_shape.di - kernel_shape.di) / stride + 1;
+        let dim1_kernel_fits = (image_shape.dj - kernel_shape.dj) / stride + 1;
+        return (dim0_kernel_fits, dim1_kernel_fits);
+    }
+
+    pub fn check_convolution_dimensions(
+        image_shape: &TensorShape,
+        kernel_shape: &TensorShape,
+        stride: u32,
+        result_shape: &TensorShape,
         result_channel: u32,
     ) -> bool {
-        // Todo:    pass shape references instead of tensor references
-        //          this should reduce the number of shape.get() calls
-        //          since we will do these in the convolution code
-        //          anyway
-
-        let result_shape = result.shape.get();
-        let kernel_shape = kernel.shape.get();
-        let image_shape = image.shape.get();
-
         // We check and immediately exit when something is not right
         // No need to check anything else
 
         // image and kernel depth must match
-        if image_shape.2 != kernel_shape.2 {
+        if image_shape.dk != kernel_shape.dk {
             return false;
         }
 
         // Check if the kernel fitst in the image given the stride
         // We assume that the image is properly padded
-        if (image_shape.0 - kernel_shape.0) % stride != 0 {
+        if (image_shape.di - kernel_shape.di) % stride != 0 {
             return false;
         }
-        if (image_shape.1 - kernel_shape.1) % stride != 0 {
+        if (image_shape.dj - kernel_shape.dj) % stride != 0 {
             return false;
         }
 
         // Check if the output dimensions are correct
-        let dim0_kernel_fits = (image_shape.0 - kernel_shape.0) / stride + 1;
-        let dim1_kernel_fits = (image_shape.1 - kernel_shape.1) / stride + 1;
-        if result_shape.0 != dim0_kernel_fits {
+        let dim0_kernel_fits = (image_shape.di - kernel_shape.di) / stride + 1;
+        let dim1_kernel_fits = (image_shape.dj - kernel_shape.dj) / stride + 1;
+        if result_shape.di != dim0_kernel_fits {
             return false;
         }
-        if result_shape.1 != dim1_kernel_fits {
+        if result_shape.dj != dim1_kernel_fits {
             return false;
         }
 
         // check if the result channel is valid
-        if result_channel >= result_shape.2 {
+        if result_channel >= result_shape.dk {
             return false;
         }
 
@@ -242,7 +295,13 @@ impl Tensor {
         result: &mut Tensor,
         result_channel: u32,
     ) {
-        if Tensor::check_convolution_dimensions(image, kernel, stride, result, result_channel) {
+        if Tensor::check_convolution_dimensions(
+            &image.get_shape(),
+            &kernel.get_shape(),
+            stride,
+            &result.get_shape(),
+            result_channel,
+        ) {
             // All clear to convolute!
 
             let result_shape = result.shape.get();
@@ -315,6 +374,20 @@ mod test {
         t.set_item(&test_index2, 16.0);
         // Nothing should have changed to this value
         assert_eq!(t.get_item(&test_index2), 0.0);
+    }
+
+    #[test]
+    fn test_uniform_fill() {
+        let mut t = Tensor::new(TensorShape {
+            di: 2,
+            dj: 3,
+            dk: 4,
+        });
+        t.fill_with_uniform(-1.0, 1.0);
+        for d in t.data {
+            assert!(d <= 1.0);
+            assert!(d >= -1.0);
+        }
     }
 
     #[test]
@@ -437,27 +510,24 @@ mod test {
 
     #[test]
     fn test_convolution_check_dimensions() {
-        let shape_input = TensorShape::new(17, 25, 7);
+        let shape_image = TensorShape::new(17, 25, 7);
         let shape_kernel = TensorShape::new(3, 3, 7);
         let shape_result = TensorShape::new(8, 12, 3);
         let stride: u32 = 2;
         let result_channel: u32 = 1;
-        let tensor_image = Tensor::new(shape_input);
-        let tensor_kernel = Tensor::new(shape_kernel);
-        let tensor_result = Tensor::new(shape_result);
 
         assert!(Tensor::check_convolution_dimensions(
-            &tensor_image,
-            &tensor_kernel,
+            &shape_image,
+            &shape_kernel,
             stride,
-            &tensor_result,
+            &shape_result,
             result_channel
         ));
         assert!(!Tensor::check_convolution_dimensions(
-            &tensor_image,
-            &tensor_kernel,
+            &shape_image,
+            &shape_kernel,
             stride + 1,
-            &tensor_result,
+            &shape_result,
             result_channel
         ));
     }
@@ -531,5 +601,41 @@ mod test {
             &mut tensor_result,
         );
         assert_eq!(tensor_result, tensor_expected_result);
+    }
+
+    #[test]
+    fn test_tensor_serialize_deserialize() {
+        let tensor = Tensor::new(TensorShape {
+            di: 5,
+            dj: 5,
+            dk: 5,
+        });
+
+        let serialized_tensor = bincode::serialize(&tensor).unwrap();
+
+        let deserialized_tensor: Tensor = bincode::deserialize(&serialized_tensor[..]).unwrap();
+
+        assert_eq!(deserialized_tensor, tensor);
+    }
+
+    #[test]
+    fn test_write_read_tensor() {
+        let dir = TempDir::new("test_tensor_write_read").unwrap();
+        let file_path = dir.path().join("tensor.tsr");
+
+        let mut tensor = Tensor::new(TensorShape {
+            di: 3,
+            dj: 4,
+            dk: 5,
+        });
+        tensor.fill_with_gaussian(0.0, 1.0);
+        tensor
+            .save_to_file(&String::from(file_path.to_str().unwrap()))
+            .unwrap();
+
+        let other_tensor = Tensor::from_file(&String::from(file_path.to_str().unwrap())).unwrap();
+
+        assert_eq!(tensor, other_tensor);
+        dir.close().unwrap();
     }
 }
