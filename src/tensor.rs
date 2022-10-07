@@ -5,6 +5,9 @@ use helper::TensorShape;
 use helper::TensorStride;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fs;
+use tempdir::TempDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
@@ -81,6 +84,18 @@ impl Tensor {
         for v in &mut self.data {
             *v = rng.sample(uniform_distribution);
         }
+    }
+
+    pub fn save_to_file(self: &Self, filename: &String) -> Result<(), Box<dyn Error>> {
+        let serialized_tensor = bincode::serialize(self)?;
+        fs::write(filename, serialized_tensor)?;
+        return Ok(());
+    }
+
+    pub fn from_file(filename: &String) -> Result<Tensor, Box<dyn Error>> {
+        let file_content = fs::read(filename)?;
+        let tensor: Tensor = bincode::deserialize(&file_content)?;
+        return Ok(tensor);
     }
 
     pub fn add(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
@@ -601,5 +616,26 @@ mod test {
         let deserialized_tensor: Tensor = bincode::deserialize(&serialized_tensor[..]).unwrap();
 
         assert_eq!(deserialized_tensor, tensor);
+    }
+
+    #[test]
+    fn test_write_read_tensor() {
+        let dir = TempDir::new("test_tensor_write_read").unwrap();
+        let file_path = dir.path().join("tensor.tsr");
+
+        let mut tensor = Tensor::new(TensorShape {
+            di: 3,
+            dj: 4,
+            dk: 5,
+        });
+        tensor.fill_with_gaussian(0.0, 1.0);
+        tensor
+            .save_to_file(&String::from(file_path.to_str().unwrap()))
+            .unwrap();
+
+        let other_tensor = Tensor::from_file(&String::from(file_path.to_str().unwrap())).unwrap();
+
+        assert_eq!(tensor, other_tensor);
+        dir.close().unwrap();
     }
 }
