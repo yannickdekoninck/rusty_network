@@ -3,8 +3,9 @@ pub mod helper;
 use helper::TensorIndex;
 use helper::TensorShape;
 use helper::TensorStride;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
     strides: TensorStride,
     shape: TensorShape,
@@ -554,5 +555,20 @@ mod test {
             &mut tensor_result,
         );
         assert_eq!(tensor_result, tensor_expected_result);
+    }
+
+    #[test]
+    fn test_tensor_serialize_deserialize() {
+        let tensor = Tensor::new(TensorShape {
+            di: 5,
+            dj: 5,
+            dk: 5,
+        });
+
+        let serialized_tensor = bincode::serialize(&tensor).unwrap();
+
+        let deserialized_tensor: Tensor = bincode::deserialize(&serialized_tensor[..]).unwrap();
+
+        assert_eq!(deserialized_tensor, tensor);
     }
 }
