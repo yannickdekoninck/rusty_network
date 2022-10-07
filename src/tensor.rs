@@ -3,6 +3,7 @@ pub mod helper;
 use helper::TensorIndex;
 use helper::TensorShape;
 use helper::TensorStride;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +65,22 @@ impl Tensor {
 
     pub fn get_shape(self: &Self) -> TensorShape {
         return self.shape.clone();
+    }
+
+    pub fn fill_with_uniform(&mut self, min: f32, max: f32) {
+        let uniform_distribution = rand::distributions::Uniform::new_inclusive(min, max);
+        let mut rng = rand::prelude::thread_rng();
+        for v in &mut self.data {
+            *v = rng.sample(uniform_distribution);
+        }
+    }
+
+    pub fn fill_with_gaussian(&mut self, mean: f32, std_dev: f32) {
+        let uniform_distribution = rand_distr::Normal::new(mean, std_dev).unwrap();
+        let mut rng = rand::prelude::thread_rng();
+        for v in &mut self.data {
+            *v = rng.sample(uniform_distribution);
+        }
     }
 
     pub fn add(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
@@ -342,6 +359,20 @@ mod test {
         t.set_item(&test_index2, 16.0);
         // Nothing should have changed to this value
         assert_eq!(t.get_item(&test_index2), 0.0);
+    }
+
+    #[test]
+    fn test_uniform_fill() {
+        let mut t = Tensor::new(TensorShape {
+            di: 2,
+            dj: 3,
+            dk: 4,
+        });
+        t.fill_with_uniform(-1.0, 1.0);
+        for d in t.data {
+            assert!(d <= 1.0);
+            assert!(d >= -1.0);
+        }
     }
 
     #[test]
