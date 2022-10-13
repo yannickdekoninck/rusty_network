@@ -86,6 +86,12 @@ impl Tensor {
         }
     }
 
+    pub fn fill_with_value(&mut self, value: f32) {
+        for v in &mut self.data {
+            *v = value;
+        }
+    }
+
     pub fn save_to_file(self: &Self, filename: &String) -> Result<(), Box<dyn Error>> {
         let serialized_tensor = bincode::serialize(self)?;
         fs::write(filename, serialized_tensor)?;
@@ -387,6 +393,18 @@ mod test {
         for d in t.data {
             assert!(d <= 1.0);
             assert!(d >= -1.0);
+        }
+    }
+    #[test]
+    fn test_value_fill() {
+        let mut t = Tensor::new(TensorShape {
+            di: 2,
+            dj: 3,
+            dk: 4,
+        });
+        t.fill_with_value(7.0);
+        for d in t.data {
+            assert!(d == 7.0);
         }
     }
 
