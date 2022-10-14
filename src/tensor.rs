@@ -349,6 +349,74 @@ impl Tensor {
             }
         }
     }
+
+    pub fn check_max_pooling_dimensions(
+        image_shape: &TensorShape,
+        mask_shape: &TensorShape,
+        stride: u32,
+        result_shape: &TensorShape,
+    ) -> bool {
+        // We check and immediately exit when something is not right
+        // No need to check anything else
+
+        // image and result depth must match
+        if result_shape.dk != image_shape.dk {
+            return false;
+        }
+
+        // Check if the mask fitst in the image given the stride
+        // We assume that the image is properly padded
+        if (image_shape.di - mask_shape.di) % stride != 0 {
+            return false;
+        }
+        if (image_shape.dj - mask_shape.dj) % stride != 0 {
+            return false;
+        }
+
+        // Check if the output dimensions are correct
+        let dim0_mask_fits = (image_shape.di - mask_shape.di) / stride + 1;
+        let dim1_mask_fits = (image_shape.dj - mask_shape.dj) / stride + 1;
+        if result_shape.di != dim0_mask_fits {
+            return false;
+        }
+        if result_shape.dj != dim1_mask_fits {
+            return false;
+        }
+        return true;
+    }
+
+    pub fn max_pool(image: &Tensor, mask_shape: &TensorShape, stride: u32, result: &mut Tensor) {
+        if Tensor::check_max_pooling_dimensions(
+            &image.get_shape(),
+            mask_shape,
+            stride,
+            &result.get_shape(),
+        ) {
+            let result_shape = result.get_shape();
+            // Max pooling loop
+            for k in 0..result_shape.dk {
+                for j in 0..result_shape.dj {
+                    for i in 0..result_shape.di {
+                        let mut running_max = f32::NEG_INFINITY;
+
+                        for jj in 0..mask_shape.dj {
+                            for ii in 0..mask_shape.di {
+                                let current_item = image.get_item(&TensorIndex {
+                                    i: i * stride + ii,
+                                    j: j * stride + jj,
+                                    k,
+                                });
+                                if current_item > running_max {
+                                    running_max = current_item
+                                }
+                            }
+                        }
+                        result.set_item(&TensorIndex{i: i, j: j, k: k}, running_max);
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -582,6 +650,28 @@ mod test {
             &mut tensor_result,
             result_channel,
         );
+        assert_eq!(tensor_result, tensor_expected_result);
+    }
+
+    #[test]
+    fn test_max_pooling() {
+        let shape_input = TensorShape::new(5, 5, 3);
+        let shape_mask = TensorShape::new(3, 3, 1);
+        let shape_result = TensorShape::new(2, 2, 3);
+        let stride: u32 = 2;
+        let mut tensor_image = Tensor::new(shape_input);
+        tensor_image.fill_with_value(1.0);
+        tensor_image.set_item(&TensorIndex { i: 0, j: 0, k: 0 }, 2.0);
+        tensor_image.set_item(&TensorIndex { i: 2, j: 2, k: 1 }, 3.0);
+        tensor_image.set_item(&TensorIndex { i: 4, j: 4, k: 2 }, 4.0);
+        let mut tensor_result = Tensor::new(shape_result);
+        let tensor_expected_result = Tensor {
+            strides: TensorStride::new_from_shape(&shape_result),
+            shape: shape_result,
+            data: vec![2.0, 1.0, 1.0, 1.0, 3.0, 3.0, 3.0, 3.0, 1.0, 1.0, 1.0, 4.0],
+        };
+        Tensor::max_pool(&tensor_image, &shape_mask, stride, &mut tensor_result);
+
         assert_eq!(tensor_result, tensor_expected_result);
     }
 
