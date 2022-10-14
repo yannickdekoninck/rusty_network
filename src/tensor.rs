@@ -3,8 +3,13 @@ pub mod helper;
 use helper::TensorIndex;
 use helper::TensorShape;
 use helper::TensorStride;
+use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fs;
+use tempdir::TempDir;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
     strides: TensorStride,
     shape: TensorShape,
@@ -63,6 +68,40 @@ impl Tensor {
 
     pub fn get_shape(self: &Self) -> TensorShape {
         return self.shape.clone();
+    }
+
+    pub fn fill_with_uniform(&mut self, min: f32, max: f32) {
+        let uniform_distribution = rand::distributions::Uniform::new_inclusive(min, max);
+        let mut rng = rand::prelude::thread_rng();
+        for v in &mut self.data {
+            *v = rng.sample(uniform_distribution);
+        }
+    }
+
+    pub fn fill_with_gaussian(&mut self, mean: f32, std_dev: f32) {
+        let uniform_distribution = rand_distr::Normal::new(mean, std_dev).unwrap();
+        let mut rng = rand::prelude::thread_rng();
+        for v in &mut self.data {
+            *v = rng.sample(uniform_distribution);
+        }
+    }
+
+    pub fn fill_with_value(&mut self, value: f32) {
+        for v in &mut self.data {
+            *v = value;
+        }
+    }
+
+    pub fn save_to_file(self: &Self, filename: &String) -> Result<(), Box<dyn Error>> {
+        let serialized_tensor = bincode::serialize(self)?;
+        fs::write(filename, serialized_tensor)?;
+        return Ok(());
+    }
+
+    pub fn from_file(filename: &String) -> Result<Tensor, Box<dyn Error>> {
+        let file_content = fs::read(filename)?;
+        let tensor: Tensor = bincode::deserialize(&file_content)?;
+        return Ok(tensor);
     }
 
     pub fn add(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
@@ -344,6 +383,32 @@ mod test {
     }
 
     #[test]
+    fn test_uniform_fill() {
+        let mut t = Tensor::new(TensorShape {
+            di: 2,
+            dj: 3,
+            dk: 4,
+        });
+        t.fill_with_uniform(-1.0, 1.0);
+        for d in t.data {
+            assert!(d <= 1.0);
+            assert!(d >= -1.0);
+        }
+    }
+    #[test]
+    fn test_value_fill() {
+        let mut t = Tensor::new(TensorShape {
+            di: 2,
+            dj: 3,
+            dk: 4,
+        });
+        t.fill_with_value(7.0);
+        for d in t.data {
+            assert!(d == 7.0);
+        }
+    }
+
+    #[test]
     fn test_tensor_equals() {
         let shape = TensorShape::new(2, 3, 1);
         let t1 = Tensor {
@@ -554,5 +619,41 @@ mod test {
             &mut tensor_result,
         );
         assert_eq!(tensor_result, tensor_expected_result);
+    }
+
+    #[test]
+    fn test_tensor_serialize_deserialize() {
+        let tensor = Tensor::new(TensorShape {
+            di: 5,
+            dj: 5,
+            dk: 5,
+        });
+
+        let serialized_tensor = bincode::serialize(&tensor).unwrap();
+
+        let deserialized_tensor: Tensor = bincode::deserialize(&serialized_tensor[..]).unwrap();
+
+        assert_eq!(deserialized_tensor, tensor);
+    }
+
+    #[test]
+    fn test_write_read_tensor() {
+        let dir = TempDir::new("test_tensor_write_read").unwrap();
+        let file_path = dir.path().join("tensor.tsr");
+
+        let mut tensor = Tensor::new(TensorShape {
+            di: 3,
+            dj: 4,
+            dk: 5,
+        });
+        tensor.fill_with_gaussian(0.0, 1.0);
+        tensor
+            .save_to_file(&String::from(file_path.to_str().unwrap()))
+            .unwrap();
+
+        let other_tensor = Tensor::from_file(&String::from(file_path.to_str().unwrap())).unwrap();
+
+        assert_eq!(tensor, other_tensor);
+        dir.close().unwrap();
     }
 }
