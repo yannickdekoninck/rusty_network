@@ -411,9 +411,23 @@ impl Tensor {
                                 }
                             }
                         }
-                        result.set_item(&TensorIndex{i: i, j: j, k: k}, running_max);
+                        result.set_item(&TensorIndex { i: i, j: j, k: k }, running_max);
                     }
                 }
+            }
+        }
+    }
+
+    pub fn softmax(input: &Tensor, output: &mut Tensor) {
+        if input.get_shape() == output.get_shape() {
+            let mut sum = 0.0;
+            for i in 0..input.data.len() {
+                let exp = input.data[i].exp();
+                output.data[i] = exp;
+                sum += exp;
+            }
+            for f in output.data.iter_mut() {
+                *f = *f / sum;
             }
         }
     }
@@ -543,6 +557,29 @@ mod test {
             data: vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0],
         };
         Tensor::scale(&t1, scalar, &mut result);
+
+        assert_eq!(expected_result, result);
+    }
+    #[test]
+    fn test_softmax() {
+        let shape = TensorShape::new(1, 3, 1);
+        let t1 = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![1.0, 2.0, 3.0],
+        };
+
+        let mut result = Tensor::new(shape);
+        let f1: f32 = (1.0 as f32).exp();
+        let f2: f32 = (2.0 as f32).exp();
+        let f3: f32 = (3.0 as f32).exp();
+        let sum = f1 + f2 + f3;
+        let expected_result = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![f1 / sum, f2 / sum, f3 / sum],
+        };
+        Tensor::softmax(&t1, &mut result);
 
         assert_eq!(expected_result, result);
     }
