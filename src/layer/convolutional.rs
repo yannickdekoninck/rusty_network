@@ -37,7 +37,7 @@ impl ConvolutionalLayer {
         let kernels = vec![Tensor::new(kernel_shape); output_depth as usize];
 
         match new_layer.fill_from_state(kernels, input_shape, stride, name) {
-            Ok(v) => {
+            Ok(_) => {
                 return Ok(new_layer);
             }
             Err(v) => return Err(v),
@@ -104,6 +104,47 @@ impl ConvolutionalLayer {
         self.stride = stride;
         return Ok(());
     }
+    fn load_from_serialized_data(
+        self: &mut Self,
+        data: HashMap<ConvolutionalSerialKeys, Vec<u8>>,
+    ) -> Result<(), &'static str> {
+        // Check the correct keys are present
+        if !data.contains_key(&ConvolutionalSerialKeys::Name) {
+            return Err("Data does not contain --name-- key");
+        }
+        if !data.contains_key(&ConvolutionalSerialKeys::Kernels) {
+            return Err("Data does not contain --kernels-- key");
+        }
+        if !data.contains_key(&ConvolutionalSerialKeys::InputShape) {
+            return Err("Data does not contain --input shape-- key");
+        }
+        if !data.contains_key(&ConvolutionalSerialKeys::Stride) {
+            return Err("Data does not contain --stride-- key");
+        }
+
+        let mask_shape_data = data
+            .get(&ConvolutionalSerialKeys::Kernels)
+            .expect("Cannot access mask shape data");
+        let kernels: Vec<Tensor> =
+            bincode::deserialize(mask_shape_data).expect("Cannot deserialize kernels data");
+        let input_shape_data = data
+            .get(&ConvolutionalSerialKeys::InputShape)
+            .expect("Cannot access input shape data");
+        let input_shape: TensorShape =
+            bincode::deserialize(input_shape_data).expect("Cannot deserialize input shape data");
+        let stride_data = data
+            .get(&ConvolutionalSerialKeys::Stride)
+            .expect("Cannot access stride data");
+        let stride: u32 =
+            bincode::deserialize(&stride_data).expect("Cannot deserialize stride data");
+
+        let name_data = data
+            .get(&ConvolutionalSerialKeys::Name)
+            .expect("Cannot access name data");
+        let name: String = bincode::deserialize(name_data).expect("Cannot deserialize name data");
+
+        return self.fill_from_state(kernels, input_shape, stride, &name);
+    }
 }
 
 impl Layer for ConvolutionalLayer {
@@ -147,6 +188,52 @@ impl Layer for ConvolutionalLayer {
         self: &mut Self,
         serial_data: SerializedLayer,
     ) -> Result<(), &'static str> {
-        return Ok(());
+        // Unwrapping the serialized layer and checking it is the correct type
+        match serial_data {
+            SerializedLayer::SerialConvolutionalLayer(data) => {
+                return self.load_from_serialized_data(data);
+            }
+            _ => {
+                return Err("Layer type does not match max pool type");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_serialize_deserialize() {
+        let conv_layer = ConvolutionalLayer::new(
+            TensorShape {
+                di: 2,
+                dj: 2,
+                dk: 1,
+            },
+            TensorShape {
+                di: 4,
+                dj: 4,
+                dk: 1,
+            },
+            2,
+            4,
+            &String::from("Convolutional layer"),
+        )
+        .unwrap();
+
+        let serialized_conv_layer = conv_layer.get_serialized();
+
+        let mut new_layer = ConvolutionalLayer::empty();
+        assert!(new_layer
+            .load_from_serialized(serialized_conv_layer)
+            .is_ok());
+
+        assert_eq!(new_layer.kernels, conv_layer.kernels);
+        assert_eq!(new_layer.input_shape, conv_layer.input_shape);
+        assert_eq!(new_layer.output_shape, conv_layer.output_shape);
+        assert_eq!(new_layer.stride, conv_layer.stride);
+        assert_eq!(new_layer.name, conv_layer.name);
     }
 }

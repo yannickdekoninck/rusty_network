@@ -11,7 +11,7 @@ pub mod softmax;
 
 #[derive(Serialize, Deserialize)]
 pub enum SerializedLayer {
-    SerialConvolutionalLayer(HashMap<String, Vec<u8>>),
+    SerialConvolutionalLayer(HashMap<convolutional::ConvolutionalSerialKeys, Vec<u8>>),
     SerialFullyConnectedLayer(HashMap<String, Vec<u8>>),
     SerialMaxPoolLayer(HashMap<max_pool::MaxPoolSerialKeys, Vec<u8>>),
     SerialSoftMaxLayer(HashMap<softmax::SoftMaxSerialKeys, Vec<u8>>),
