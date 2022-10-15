@@ -2,6 +2,8 @@ use crate::tensor::{helper::TensorShape, Tensor};
 
 pub mod convolutional;
 pub mod fully_connected;
+pub mod max_pool;
+pub mod softmax;
 
 pub trait Layer {
     fn forward(self: &Self, input: &Tensor, output: &mut Tensor);
