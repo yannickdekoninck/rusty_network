@@ -1,8 +1,9 @@
+use super::SerializedLayer;
 use crate::layer::Layer;
 use crate::tensor::helper::TensorIndex;
 use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
-
+use std::collections::HashMap;
 pub struct FullyConnectedLayer {
     weights: Tensor,
     bias: Tensor,
@@ -22,6 +23,50 @@ impl FullyConnectedLayer {
             bias: bias,
             name: name.clone(),
         };
+    }
+
+    pub fn empty() -> Self {
+        let fc = FullyConnectedLayer {
+            weights: Tensor::new(TensorShape {
+                di: 1,
+                dj: 1,
+                dk: 1,
+            }),
+            bias: Tensor::new(TensorShape {
+                di: 1,
+                dj: 1,
+                dk: 1,
+            }),
+            name: String::from("Empty fully connected layer"),
+        };
+
+        return fc;
+    }
+
+    pub fn fill_from_state(
+        self: &mut Self,
+        weights: Tensor,
+        bias: Tensor,
+        name: &String,
+    ) -> Result<(), &'static str> {
+        // Check sizes
+        let weight_shape = weights.get_shape();
+        let bias_shape = bias.get_shape();
+        if weight_shape.dk != bias_shape.dk {
+            return Err("Third dimension of bias and weights don't match");
+        }
+        if weight_shape.di != bias_shape.di {
+            return Err("First dimension of bias and weight don't match");
+        }
+        if bias_shape.dj != 1 {
+            return Err("The second dimension of bias must be 1");
+        }
+
+        //ready to assign
+        self.weights = weights;
+        self.bias = bias;
+        self.name = name.clone();
+        return Ok(());
     }
 
     pub fn fill_weights_with_value(self: &mut Self, value: f32) {
@@ -52,6 +97,18 @@ impl Layer for FullyConnectedLayer {
 
     fn get_name(self: &Self) -> String {
         return self.name.clone();
+    }
+
+    fn get_serialized(self: &Self) -> SerializedLayer {
+        let serialized_data = HashMap::new();
+        return SerializedLayer::SerialMaxPoolLayer(serialized_data);
+    }
+
+    fn load_from_serialized(
+        self: &mut Self,
+        serial_data: SerializedLayer,
+    ) -> Result<(), &'static str> {
+        return Ok(());
     }
 }
 
