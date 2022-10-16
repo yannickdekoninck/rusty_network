@@ -88,7 +88,7 @@ impl FullyConnectedLayer {
 
     fn load_from_serialized_data(
         self: &mut Self,
-        data: HashMap<FullyConnectedSerialKeys, Vec<u8>>,
+        data: &HashMap<FullyConnectedSerialKeys, Vec<u8>>,
     ) -> Result<(), &'static str> {
         // Check the correct keys are present
         if !data.contains_key(&FullyConnectedSerialKeys::Name) {
@@ -159,7 +159,7 @@ impl Layer for FullyConnectedLayer {
 
     fn load_from_serialized(
         self: &mut Self,
-        serial_data: SerializedLayer,
+        serial_data: &SerializedLayer,
     ) -> Result<(), &'static str> {
         // Unwrapping the serialized layer and checking it is the correct type
         match serial_data {
@@ -200,7 +200,7 @@ mod test {
 
         let serialized_layer = fc_layer.get_serialized();
 
-        assert!(other_layer.load_from_serialized(serialized_layer).is_ok());
+        assert!(other_layer.load_from_serialized(&serialized_layer).is_ok());
 
         assert_eq!(other_layer.weights, fc_layer.weights);
         assert_eq!(other_layer.bias, fc_layer.bias);

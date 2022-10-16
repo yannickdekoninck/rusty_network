@@ -32,7 +32,7 @@ impl SoftmaxLayer {
 
     fn load_from_serialized_data(
         self: &mut Self,
-        data: HashMap<SoftMaxSerialKeys, Vec<u8>>,
+        data: &HashMap<SoftMaxSerialKeys, Vec<u8>>,
     ) -> Result<(), &'static str> {
         // Check the correct keys are present
         if !data.contains_key(&SoftMaxSerialKeys::Name) {
@@ -87,7 +87,7 @@ impl Layer for SoftmaxLayer {
 
     fn load_from_serialized(
         self: &mut Self,
-        serial_data: SerializedLayer,
+        serial_data: &SerializedLayer,
     ) -> Result<(), &'static str> {
         // Unwrapping the serialized layer and checking it is the correct type
         match serial_data {
@@ -120,7 +120,7 @@ mod test {
 
         let mut sml2 =
             SoftmaxLayer::new(TensorShape::new(1, 1, 1), &String::from("Nothing")).unwrap();
-        assert!(sml2.load_from_serialized(serialized_sml).is_ok());
+        assert!(sml2.load_from_serialized(&serialized_sml).is_ok());
 
         assert_eq!(sml2.name, String::from("Softmax layer"));
         assert_eq!(
