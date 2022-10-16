@@ -28,31 +28,65 @@ impl MaxPoolLayer {
         stride: u32,
         name: &String,
     ) -> Result<MaxPoolLayer, &'static str> {
+        let mut cl = MaxPoolLayer::empty();
+        match cl.fill_from_state(input_shape, mask_shape, stride, name) {
+            Ok(_) => return Ok(cl),
+            Err(msg) => return Err(msg),
+        };
+    }
+    pub fn empty() -> Self {
+        let mp = MaxPoolLayer {
+            input_shape: TensorShape {
+                di: 1,
+                dj: 1,
+                dk: 1,
+            },
+            mask_shape: TensorShape {
+                di: 1,
+                dj: 1,
+                dk: 1,
+            },
+            output_shape: TensorShape {
+                di: 1,
+                dj: 1,
+                dk: 1,
+            },
+            stride: 1,
+            name: String::from("Empty max pool layer"),
+        };
+        return mp;
+    }
+
+    pub fn fill_from_state(
+        self: &mut Self,
+        input_shape: TensorShape,
+        mask_shape: TensorShape,
+        stride: u32,
+        name: &String,
+    ) -> Result<(), &'static str> {
         if !Tensor::does_kernel_stride_fit_image(&input_shape, &mask_shape, stride) {
             return Err("Mask does not fit in image with given stride");
         }
         let (dim0, dim1) = Tensor::get_convolution_dim_fit(&input_shape, &mask_shape, stride);
 
-        let result_shape = TensorShape {
+        let output_shape = TensorShape {
             di: dim0,
             dj: dim1,
             dk: input_shape.dk,
         };
 
-        let cl = MaxPoolLayer {
-            input_shape: input_shape,
-            stride: stride,
-            mask_shape: mask_shape,
-            output_shape: result_shape,
-            name: name.clone(),
-        };
+        self.input_shape = input_shape;
+        self.output_shape = output_shape;
+        self.mask_shape = mask_shape;
+        self.stride = stride;
+        self.name = name.clone();
 
-        return Ok(cl);
+        return Ok(());
     }
 
     fn load_from_serialized_data(
         self: &mut Self,
-        data: HashMap<MaxPoolSerialKeys, Vec<u8>>,
+        data: &HashMap<MaxPoolSerialKeys, Vec<u8>>,
     ) -> Result<(), &'static str> {
         // Check the correct keys are present
         if !data.contains_key(&MaxPoolSerialKeys::Name) {
@@ -128,7 +162,7 @@ impl Layer for MaxPoolLayer {
 
     fn load_from_serialized(
         self: &mut Self,
-        serial_data: SerializedLayer,
+        serial_data: &SerializedLayer,
     ) -> Result<(), &'static str> {
         // Unwrapping the serialized layer and checking it is the correct type
         match serial_data {
@@ -181,7 +215,7 @@ mod test {
         )
         .unwrap();
 
-        assert!(mpl2.load_from_serialized(serialized_mpl).is_ok());
+        assert!(mpl2.load_from_serialized(&serialized_mpl).is_ok());
 
         assert_eq!(mpl2.name, String::from("Max pooling"));
         assert_eq!(
