@@ -7,7 +7,6 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
-use tempdir::TempDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
@@ -438,6 +437,7 @@ mod test {
     use std::vec;
 
     use super::*;
+    use tempdir::TempDir;
 
     //
     #[test]
