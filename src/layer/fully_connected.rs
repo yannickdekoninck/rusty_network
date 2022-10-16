@@ -1,6 +1,6 @@
 use super::SerializedLayer;
 use crate::layer::Layer;
-use crate::tensor::helper::TensorIndex;
+
 use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
 use serde::{Deserialize, Serialize};
@@ -176,6 +176,7 @@ impl Layer for FullyConnectedLayer {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::tensor::helper::TensorIndex;
     #[test]
     fn test_value_filling() {
         let mut fc_layer = FullyConnectedLayer::new(4, 4, &String::from("Test layer"));
