@@ -22,12 +22,32 @@ pub struct SoftmaxLayer {
 
 impl SoftmaxLayer {
     pub fn new(shape: TensorShape, name: &String) -> Result<SoftmaxLayer, &'static str> {
-        let cl = SoftmaxLayer {
-            shape: shape,
-            name: name.clone(),
+        let mut sm = SoftmaxLayer::empty();
+        sm.fill_from_state(shape, name)?;
+        return Ok(sm);
+    }
+
+    pub fn empty() -> Self {
+        let sm = SoftmaxLayer {
+            shape: TensorShape {
+                di: 1,
+                dj: 1,
+                dk: 1,
+            },
+            name: String::from("Empty softmax layer"),
         };
 
-        return Ok(cl);
+        return sm;
+    }
+
+    pub fn fill_from_state(
+        self: &mut Self,
+        shape: TensorShape,
+        name: &String,
+    ) -> Result<(), &'static str> {
+        self.shape = shape;
+        self.name = name.clone();
+        return Ok(());
     }
 
     fn load_from_serialized_data(
