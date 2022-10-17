@@ -299,7 +299,7 @@ mod test {
         let mut input_tensor = Tensor::new(TensorShape::new(2, 1, 1));
         input_tensor.fill_with_value(1.0);
 
-        network.infer(&input_tensor);
+        network.infer(&input_tensor).unwrap();
         let output = network.get_output().unwrap();
 
         let serialized_network = SerializedNetwork::new_from_network(&network).unwrap();
