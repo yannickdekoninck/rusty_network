@@ -45,8 +45,6 @@ impl SerializedLayer {
                 sm_layer.load_from_serialized(&self)?;
                 return network.add_layer(sm_layer);
             }
-            // Placeholder
-            _ => return Ok(()),
         }
     }
 }
