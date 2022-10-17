@@ -106,7 +106,7 @@ impl ConvolutionalLayer {
     }
     fn load_from_serialized_data(
         self: &mut Self,
-        data: HashMap<ConvolutionalSerialKeys, Vec<u8>>,
+        data: &HashMap<ConvolutionalSerialKeys, Vec<u8>>,
     ) -> Result<(), &'static str> {
         // Check the correct keys are present
         if !data.contains_key(&ConvolutionalSerialKeys::Name) {
@@ -186,7 +186,7 @@ impl Layer for ConvolutionalLayer {
 
     fn load_from_serialized(
         self: &mut Self,
-        serial_data: SerializedLayer,
+        serial_data: &SerializedLayer,
     ) -> Result<(), &'static str> {
         // Unwrapping the serialized layer and checking it is the correct type
         match serial_data {
@@ -227,7 +227,7 @@ mod test {
 
         let mut new_layer = ConvolutionalLayer::empty();
         assert!(new_layer
-            .load_from_serialized(serialized_conv_layer)
+            .load_from_serialized(&serialized_conv_layer)
             .is_ok());
 
         assert_eq!(new_layer.kernels, conv_layer.kernels);

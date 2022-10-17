@@ -22,17 +22,37 @@ pub struct SoftmaxLayer {
 
 impl SoftmaxLayer {
     pub fn new(shape: TensorShape, name: &String) -> Result<SoftmaxLayer, &'static str> {
-        let cl = SoftmaxLayer {
-            shape: shape,
-            name: name.clone(),
+        let mut sm = SoftmaxLayer::empty();
+        sm.fill_from_state(shape, name)?;
+        return Ok(sm);
+    }
+
+    pub fn empty() -> Self {
+        let sm = SoftmaxLayer {
+            shape: TensorShape {
+                di: 1,
+                dj: 1,
+                dk: 1,
+            },
+            name: String::from("Empty softmax layer"),
         };
 
-        return Ok(cl);
+        return sm;
+    }
+
+    pub fn fill_from_state(
+        self: &mut Self,
+        shape: TensorShape,
+        name: &String,
+    ) -> Result<(), &'static str> {
+        self.shape = shape;
+        self.name = name.clone();
+        return Ok(());
     }
 
     fn load_from_serialized_data(
         self: &mut Self,
-        data: HashMap<SoftMaxSerialKeys, Vec<u8>>,
+        data: &HashMap<SoftMaxSerialKeys, Vec<u8>>,
     ) -> Result<(), &'static str> {
         // Check the correct keys are present
         if !data.contains_key(&SoftMaxSerialKeys::Name) {
@@ -87,7 +107,7 @@ impl Layer for SoftmaxLayer {
 
     fn load_from_serialized(
         self: &mut Self,
-        serial_data: SerializedLayer,
+        serial_data: &SerializedLayer,
     ) -> Result<(), &'static str> {
         // Unwrapping the serialized layer and checking it is the correct type
         match serial_data {
@@ -120,7 +140,7 @@ mod test {
 
         let mut sml2 =
             SoftmaxLayer::new(TensorShape::new(1, 1, 1), &String::from("Nothing")).unwrap();
-        assert!(sml2.load_from_serialized(serialized_sml).is_ok());
+        assert!(sml2.load_from_serialized(&serialized_sml).is_ok());
 
         assert_eq!(sml2.name, String::from("Softmax layer"));
         assert_eq!(

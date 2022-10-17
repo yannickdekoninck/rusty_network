@@ -1,7 +1,52 @@
+use serde::Deserialize;
+use serde::Serialize;
+
+use std::fs;
+
 use crate::layer::Layer;
+use crate::layer::SerializedLayer;
 use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
 use std::error::Error;
+
+// This datastructure is used to store the network topology and data
+#[derive(Serialize, Deserialize)]
+struct SerializedNetwork {
+    serial_layers: Vec<SerializedLayer>,
+}
+
+impl SerializedNetwork {
+    fn empty() -> SerializedNetwork {
+        let snl = SerializedNetwork {
+            serial_layers: vec![],
+        };
+        return snl;
+    }
+
+    fn populate_network(self: &Self, network: &mut Network) -> Result<(), &'static str> {
+        for layer in &self.serial_layers {
+            SerializedLayer::add_to_network(layer, network)?;
+        }
+        return Ok(());
+    }
+
+    fn new_from_network(network: &Network) -> Result<SerializedNetwork, &'static str> {
+        let mut sn = SerializedNetwork::empty();
+        let layers = network.get_layers();
+        for layer in layers {
+            let serial_layer = layer.get_serialized();
+            sn.serial_layers.push(serial_layer);
+        }
+        return Ok(sn);
+    }
+
+    fn to_byte_array(self: &Self) -> Result<Vec<u8>, &'static str> {
+        return match bincode::serialize(self) {
+            Ok(val) => Ok(val),
+            Err(_) => Err("Could not convert to by array"),
+        };
+    }
+}
 
 pub struct Network {
     layers: Vec<Box<dyn Layer>>,
@@ -30,9 +75,15 @@ impl Network {
     }
 
     pub fn save_to_file(self: &Self, filename: &String) -> Result<(), Box<dyn Error>> {
+        let serialized_network = SerializedNetwork::new_from_network(self)?;
+        let byte_stream = serialized_network.to_byte_array()?;
+        fs::write(filename, byte_stream)?;
         return Ok(());
     }
-    pub fn load_from_file(self: &Self, filename: &String) -> Result<(), Box<dyn Error>> {
+    pub fn load_from_file(self: &mut Self, filename: &String) -> Result<(), Box<dyn Error>> {
+        let file_content = fs::read(filename)?;
+        let sn: SerializedNetwork = bincode::deserialize(&file_content)?;
+        sn.populate_network(self)?;
         return Ok(());
     }
 
@@ -85,6 +136,10 @@ impl Network {
             return Err("Trying to access an intermediate state that does not exist");
         }
         return Ok(&self.intermediate_states[id]);
+    }
+
+    pub fn get_layers(self: &Self) -> &Vec<Box<dyn Layer>> {
+        return &self.layers;
     }
 
     pub fn infer(self: &mut Self, input: &Tensor) -> Result<(), &'static str> {
@@ -220,5 +275,49 @@ mod test {
 
         // Check the result is as expected
         assert_eq!(expected_result, *result);
+    }
+
+    #[test]
+    fn test_network_serialize_deserialize() {
+        // Create layers
+        let mut layer_1 = FullyConnectedLayer::new(2, 3, &String::from("full_layer_1"));
+        let mut layer_2 = FullyConnectedLayer::new(3, 2, &String::from("full_layer_2"));
+
+        // Fill weights and bias values
+        layer_1.fill_weights_with_value(1.0);
+        layer_1.fill_bias_with_value(2.0);
+
+        layer_2.fill_weights_with_value(3.0);
+        layer_2.fill_bias_with_value(4.0);
+
+        // Create network
+        let mut network = Network::new();
+        network.add_layer(layer_1).unwrap();
+        network.add_layer(layer_2).unwrap();
+
+        // Create input
+        let mut input_tensor = Tensor::new(TensorShape::new(2, 1, 1));
+        input_tensor.fill_with_value(1.0);
+
+        network.infer(&input_tensor);
+        let output = network.get_output().unwrap();
+
+        let serialized_network = SerializedNetwork::new_from_network(&network).unwrap();
+
+        let mut deserialized_network = Network::new();
+
+        assert!(serialized_network
+            .populate_network(&mut deserialized_network)
+            .is_ok());
+
+        assert_eq!(deserialized_network.layers.len(), 2);
+        let nl1 = deserialized_network.layers[0].get_name();
+        let ol1 = network.layers[0].get_name();
+        assert_eq!(nl1, ol1);
+
+        assert!(deserialized_network.infer(&input_tensor).is_ok());
+        let other_output = deserialized_network.get_output().unwrap();
+
+        assert_eq!(output, other_output);
     }
 }
