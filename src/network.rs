@@ -9,6 +9,14 @@ use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
 use std::error::Error;
 
+// An enum to indicate the state of a network and its layers
+
+#[derive(Clone, Copy)]
+pub enum NetworkRunState {
+    Inference,
+    Training,
+}
+
 // This datastructure is used to store the network topology and data
 #[derive(Serialize, Deserialize)]
 struct SerializedNetwork {
@@ -51,13 +59,15 @@ impl SerializedNetwork {
 pub struct Network {
     layers: Vec<Box<dyn Layer>>,
     intermediate_states: Vec<Tensor>,
+    intermediate_gradients: Vec<Tensor>,
     input_shape: TensorShape,
     output_shape: TensorShape,
+    run_state: NetworkRunState,
 }
 
 impl Network {
     // Create a new network
-    pub fn new() -> Network {
+    pub fn new(run_state: NetworkRunState) -> Network {
         return Network {
             layers: vec![],
             input_shape: TensorShape {
@@ -71,6 +81,8 @@ impl Network {
                 dk: 0,
             },
             intermediate_states: vec![],
+            intermediate_gradients: vec![],
+            run_state: run_state,
         };
     }
 
@@ -142,6 +154,10 @@ impl Network {
         return &self.layers;
     }
 
+    pub fn get_run_state(self: &Self) -> NetworkRunState {
+        return self.run_state.clone();
+    }
+
     pub fn infer(self: &mut Self, input: &Tensor) -> Result<(), &'static str> {
         // Input shape check
         if input.get_shape() != self.input_shape {
@@ -209,7 +225,7 @@ mod test {
         let layer_3 = FullyConnectedLayer::new(3, 8, &String::from("full_layer_2"));
         let expected_output_shape = layer_2.get_output_shape();
         let expected_input_shape = layer_1.get_input_shape();
-        let mut network = Network::new();
+        let mut network = Network::new(NetworkRunState::Inference);
         assert!(network.add_layer(layer_1).is_ok());
         assert!(network.add_layer(layer_2).is_ok());
         assert!(network.add_layer(layer_3).is_err());
@@ -232,7 +248,7 @@ mod test {
 
         let layer_2 = FullyConnectedLayer::new(3, 8, &String::from("full_layer_1"));
         let expected_intermediate_shape = layer_1.get_output_shape();
-        let mut network = Network::new();
+        let mut network = Network::new(NetworkRunState::Inference);
         assert!(network.add_layer(layer_1).is_ok());
         assert!(network.add_layer(layer_2).is_ok());
         let intermediate_shape = network.get_intermediate_state(1).unwrap().get_shape();
@@ -256,7 +272,7 @@ mod test {
         input_tensor.fill_with_value(1.0);
 
         // Create network
-        let mut network = Network::new();
+        let mut network = Network::new(NetworkRunState::Inference);
         network.add_layer(layer_1).unwrap();
         network.add_layer(layer_2).unwrap();
 
@@ -291,7 +307,7 @@ mod test {
         layer_2.fill_bias_with_value(4.0);
 
         // Create network
-        let mut network = Network::new();
+        let mut network = Network::new(NetworkRunState::Inference);
         network.add_layer(layer_1).unwrap();
         network.add_layer(layer_2).unwrap();
 
@@ -304,7 +320,7 @@ mod test {
 
         let serialized_network = SerializedNetwork::new_from_network(&network).unwrap();
 
-        let mut deserialized_network = Network::new();
+        let mut deserialized_network = Network::new(NetworkRunState::Inference);
 
         assert!(serialized_network
             .populate_network(&mut deserialized_network)
