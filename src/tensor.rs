@@ -41,6 +41,15 @@ impl Tensor {
         };
     }
 
+    pub fn empty() -> Tensor {
+        let tensor_shape = TensorShape {
+            di: 1,
+            dj: 1,
+            dk: 1,
+        };
+        return Tensor::new(tensor_shape);
+    }
+
     pub fn total_items(self: &Self) -> u32 {
         return self.shape.total_size();
     }
@@ -122,6 +131,36 @@ impl Tensor {
             }
         }
     }
+
+    pub fn transpose_ij(input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
+        // Check dimensions
+        let input_shape = input.get_shape();
+        let output_shape = output.get_shape();
+        if input_shape.dk != output_shape.dk {
+            return Err("Third dimension must match for transpose ij");
+        }
+        if input_shape.di != output_shape.dj {
+            return Err("i and j of input and output must match");
+        }
+        if input_shape.dj != output_shape.di {
+            return Err("j and i of input and output must match");
+        }
+        // Transpose loop
+
+        for k in 0..output_shape.dk {
+            for j in 0..output_shape.dj {
+                for i in 0..output_shape.di {
+                    let output_id =
+                        output.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+                    let input_id = input.get_data_index(&TensorIndex { i: j, j: i, k: k }) as usize;
+                    output.data[output_id] = input.data[input_id];
+                }
+            }
+        }
+
+        return Ok(());
+    }
+
     pub fn matrix_multiply(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
         // Check if the dimensions allow for matrix multiplication
         let sr = result.shape.get();
@@ -537,6 +576,31 @@ mod test {
         Tensor::add(&t1, &t2, &mut result);
 
         assert_eq!(expected_result, result);
+    }
+    #[test]
+    fn test_tensor_transpose_ij() {
+        let input_shape = TensorShape::new(2, 3, 2);
+        let output_shape = TensorShape::new(3, 2, 2);
+        let input = Tensor {
+            shape: input_shape,
+            strides: TensorStride::new_from_shape(&input_shape),
+            data: vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+        };
+        let expected_output = Tensor {
+            shape: output_shape,
+            strides: TensorStride::new_from_shape(&output_shape),
+            data: vec![
+                1.0, 3.0, 5.0, 2.0, 4.0, 6.0, 7.0, 9.0, 11.0, 8.0, 10.0, 12.0,
+            ],
+        };
+
+        let mut output = Tensor::new(output_shape);
+
+        assert!(Tensor::transpose_ij(&input, &mut output).is_ok());
+
+        assert_eq!(expected_output, output);
     }
 
     #[test]
