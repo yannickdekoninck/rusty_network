@@ -217,10 +217,29 @@ impl Tensor {
         weights: &Tensor,
         bias: &Tensor,
         result: &mut Tensor,
+        relu_mask: Option<&mut Tensor>,
     ) {
         // This is a helper function to do matrix multiply. bias add and relu in a single operation
         // This should save storing and loading of intermediate values
         // Everything should be nice and hot in the cache
+
+        let apply_relu_mask;
+        let relu_mask_tensor;
+        // This is really nasty and should be removed because it allocates data
+        let mut empty_tensor = Tensor::empty();
+
+        match relu_mask {
+            Some(mask) => {
+                relu_mask_tensor = mask;
+                apply_relu_mask = true;
+                // Set to 1.0 by default
+                relu_mask_tensor.fill_with_value(1.0)
+            }
+            None => {
+                relu_mask_tensor = &mut empty_tensor;
+                apply_relu_mask = false;
+            }
+        }
 
         if Tensor::check_matrix_multiply_dimensions(weights, &input, &result) {
             // Check we can do the add
@@ -251,12 +270,20 @@ impl Tensor {
 
                             let bias_index =
                                 bias.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+                            let set_index =
+                                result.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+
                             running_result += bias.data[bias_index];
+                            let pass = running_result > 0.0;
+                            if !pass {
+                                running_result = 0.0;
+                                if apply_relu_mask {
+                                    relu_mask_tensor.data[set_index] = 0.0;
+                                }
+                            }
 
                             running_result = running_result.max(0.0);
 
-                            let set_index =
-                                result.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
                             result.data[set_index] = running_result;
                         }
                     }
@@ -808,8 +835,53 @@ mod test {
             &tensor_weights,
             &tensor_bias,
             &mut tensor_result,
+            None,
         );
         assert_eq!(tensor_result, tensor_expected_result);
+    }
+
+    #[test]
+    fn test_multiply_add_relu_train() {
+        let shape_input = TensorShape::new(2, 1, 1);
+        let shape_weights = TensorShape::new(3, 2, 1);
+        let shape_bias = TensorShape::new(3, 1, 1);
+        let shape_result = TensorShape::new(3, 1, 1);
+        let tensor_input = Tensor {
+            strides: TensorStride::new_from_shape(&shape_input),
+            shape: shape_input,
+            data: vec![1.0, 0.5],
+        };
+        let tensor_bias = Tensor {
+            strides: TensorStride::new_from_shape(&shape_bias),
+            shape: shape_bias,
+            data: vec![1.0, 0.0, -1.0],
+        };
+        let tensor_weights = Tensor {
+            strides: TensorStride::new_from_shape(&shape_weights),
+            shape: shape_weights,
+            data: vec![1.0, 0.0, 2.0, 2.0, -1.0, 0.0],
+        };
+        let mut tensor_result = Tensor::new(shape_result);
+        let tensor_expected_result = Tensor {
+            strides: TensorStride::new_from_shape(&shape_result),
+            shape: shape_result,
+            data: vec![3.0, 0.0, 1.0],
+        };
+        let mut tensor_relu_mask = Tensor::new(shape_result);
+        let tensor_expected_mask = Tensor {
+            strides: TensorStride::new_from_shape(&shape_result),
+            shape: shape_result,
+            data: vec![1.0, 0.0, 1.0],
+        };
+        Tensor::matrix_multiply_add_relu(
+            &tensor_input,
+            &tensor_weights,
+            &tensor_bias,
+            &mut tensor_result,
+            Some(&mut tensor_relu_mask),
+        );
+        assert_eq!(tensor_result, tensor_expected_result);
+        assert_eq!(tensor_relu_mask, tensor_expected_mask);
     }
 
     #[test]
