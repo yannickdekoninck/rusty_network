@@ -161,11 +161,57 @@ impl Tensor {
         return Ok(());
     }
 
+    pub fn matrix_multiply_transpose(
+        tensor1: &Tensor,
+        tensor2: &Tensor,
+        result: &mut Tensor,
+    ) -> Result<(), &'static str> {
+        // This is simular to matrix multiply but first transposes transposes tensor2 before doing the multiplication
+        // Check if the dimensions allow for matrix multiplication
+        let sr = result.shape.get();
+        let s1 = tensor1.shape.get();
+        let shape_1 = tensor1.get_shape();
+        let shape_2 = tensor2.get_shape();
+        let shape_r = result.get_shape();
+        // Check tensor shape with transposed tensor
+        if !Tensor::check_matrix_multiply_dimensions(shape_1, shape_2.transpose_ij(), shape_r) {
+            return Err("Shapes do not match for matrix multiply transpose");
+        }
+        // Loop over the outer dimension
+        for k in 0..sr.2 {
+            for j in 0..sr.1 {
+                for i in 0..sr.0 {
+                    let mut running_result = 0.0;
+
+                    // inner adder loop
+
+                    for ii in 0..s1.1 {
+                        let get_index1 =
+                            tensor1.get_data_index(&TensorIndex { i: i, j: ii, k: k }) as usize;
+
+                        let get_index2 =
+                            tensor2.get_data_index(&TensorIndex { i: j, j: ii, k: k }) as usize;
+
+                        running_result += tensor1.data[get_index1] * tensor2.data[get_index2];
+                    }
+
+                    let set_index =
+                        result.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+                    result.data[set_index] = running_result;
+                }
+            }
+        }
+        return Ok(());
+    }
     pub fn matrix_multiply(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
         // Check if the dimensions allow for matrix multiplication
         let sr = result.shape.get();
         let s1 = tensor1.shape.get();
-        if Tensor::check_matrix_multiply_dimensions(tensor1, tensor2, result) {
+        if Tensor::check_matrix_multiply_dimensions(
+            tensor1.get_shape(),
+            tensor2.get_shape(),
+            result.get_shape(),
+        ) {
             // Loop over the outer dimension
             for k in 0..sr.2 {
                 for j in 0..sr.1 {
@@ -194,19 +240,16 @@ impl Tensor {
     }
 
     fn check_matrix_multiply_dimensions(
-        tensor1: &Tensor,
-        tensor2: &Tensor,
-        result: &Tensor,
+        st1: TensorShape,
+        st2: TensorShape,
+        sr: TensorShape,
     ) -> bool {
-        let st1 = tensor1.shape.get();
-        let st2 = tensor2.shape.get();
-        let sr = result.shape.get();
         // Outer dimensions must be the same
-        if st1.2 != st2.2 || st1.2 != sr.2 {
+        if st1.dk != st2.dk || st1.dk != sr.dk {
             return false;
         }
         // Inner dimensions must match
-        if st1.1 != st2.0 || st1.0 != sr.0 || st2.1 != sr.1 {
+        if st1.dj != st2.di || st1.di != sr.di || st2.dj != sr.dj {
             return false;
         }
         return true;
@@ -241,7 +284,11 @@ impl Tensor {
             }
         }
 
-        if Tensor::check_matrix_multiply_dimensions(weights, &input, &result) {
+        if Tensor::check_matrix_multiply_dimensions(
+            weights.get_shape(),
+            input.get_shape(),
+            result.get_shape(),
+        ) {
             // Check we can do the add
             if bias.shape == result.shape {
                 let result_shape = result.shape.get();
@@ -703,22 +750,46 @@ mod test {
         assert_eq!(expected_result, result);
     }
     #[test]
+    fn test_tensor_matrix_multiply_transpose() {
+        let shape_1 = TensorShape::new(3, 1, 1);
+        let shape_2 = TensorShape::new(3, 1, 1);
+        let shape_res = TensorShape::new(3, 3, 1);
+        let t1 = Tensor {
+            shape: shape_1,
+            strides: TensorStride::new_from_shape(&shape_1),
+            data: vec![1.0, 2.0, 3.0],
+        };
+        let t2 = Tensor {
+            shape: shape_2,
+            strides: TensorStride::new_from_shape(&shape_2),
+            data: vec![3.0, 4.0, 5.0],
+        };
+
+        let mut result = Tensor::new(shape_res);
+
+        let expected_result = Tensor {
+            shape: shape_res,
+            strides: TensorStride::new_from_shape(&shape_res),
+            data: vec![3.0, 6.0, 9.0, 4.0, 8.0, 12.0, 5.0, 10.0, 15.0],
+        };
+        assert!(Tensor::matrix_multiply_transpose(&t1, &t2, &mut result).is_ok());
+
+        assert_eq!(expected_result, result);
+    }
+    #[test]
     fn test_matrix_multiply_shape_check() {
         let shape_1 = TensorShape::new(5, 6, 7);
         let shape_2 = TensorShape::new(6, 8, 7);
         let shape_res = TensorShape::new(5, 8, 7);
-        let tensor_1 = Tensor::new(shape_1);
-        let tensor_2 = Tensor::new(shape_2);
-        let tensor_res = Tensor::new(shape_res);
         assert!(Tensor::check_matrix_multiply_dimensions(
-            &tensor_1,
-            &tensor_2,
-            &tensor_res
+            shape_1.clone(),
+            shape_2.clone(),
+            shape_res.clone()
         ));
         assert!(!Tensor::check_matrix_multiply_dimensions(
-            &tensor_2,
-            &tensor_1,
-            &tensor_res
+            shape_2.clone(),
+            shape_1.clone(),
+            shape_res.clone()
         ));
     }
 
