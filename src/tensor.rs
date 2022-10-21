@@ -100,6 +100,14 @@ impl Tensor {
         }
     }
 
+    pub fn fill_with_vec(&mut self, data: Vec<f32>) -> Result<(), &'static str> {
+        if data.len() != (self.total_items() as usize) {
+            return Err("Vec data did not contain the correct number of items");
+        }
+        self.data = data;
+        return Ok(());
+    }
+
     pub fn save_to_file(self: &Self, filename: &String) -> Result<(), Box<dyn Error>> {
         let serialized_tensor = bincode::serialize(self)?;
         fs::write(filename, serialized_tensor)?;
@@ -603,6 +611,17 @@ mod test {
         }
     }
 
+    #[test]
+    fn test_vec_fill() {
+        let mut t = Tensor::new(TensorShape {
+            di: 2,
+            dj: 2,
+            dk: 2,
+        });
+        let data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        assert!(t.fill_with_vec(data).is_ok());
+        assert_eq!(t.get_item(&TensorIndex { i: 0, j: 1, k: 1 }), 7.0);
+    }
     #[test]
     fn test_tensor_equals() {
         let shape = TensorShape::new(2, 3, 1);
