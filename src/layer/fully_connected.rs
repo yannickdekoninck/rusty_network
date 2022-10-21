@@ -1,5 +1,5 @@
 use super::SerializedLayer;
-use crate::layer::Layer;
+use crate::{layer::Layer, network::NetworkRunState};
 
 use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
@@ -15,38 +15,43 @@ pub enum FullyConnectedSerialKeys {
 
 pub struct FullyConnectedLayer {
     weights: Tensor,
+    weights_gradients: Tensor,
     bias: Tensor,
+    bias_gradients: Tensor,
+    relu_mask: Tensor,
     name: String,
+    run_state: NetworkRunState,
 }
 
 impl FullyConnectedLayer {
+    fn initialize_gradient_tensors(self: &mut Self) {
+        self.weights_gradients = Tensor::new(self.weights.get_shape());
+        self.weights_gradients.fill_with_value(0.0);
+        self.bias_gradients = Tensor::new(self.bias.get_shape());
+    }
+
     pub fn new(input_size: u32, output_size: u32, name: &String) -> FullyConnectedLayer {
+        let mut fcl = FullyConnectedLayer::empty();
         let weights = Tensor::new(TensorShape::new(output_size, input_size, 1));
         let bias: Tensor = Tensor::new(TensorShape {
             di: output_size,
             dj: 1,
             dk: 1,
         });
-        return FullyConnectedLayer {
-            weights: weights,
-            bias: bias,
-            name: name.clone(),
-        };
+        fcl.fill_from_state(weights, bias, name);
+        return fcl;
     }
 
     pub fn empty() -> Self {
+        // Initialize an empty fully connected layer
         let fc = FullyConnectedLayer {
-            weights: Tensor::new(TensorShape {
-                di: 1,
-                dj: 1,
-                dk: 1,
-            }),
-            bias: Tensor::new(TensorShape {
-                di: 1,
-                dj: 1,
-                dk: 1,
-            }),
+            weights: Tensor::empty(),
+            bias: Tensor::empty(),
+            weights_gradients: Tensor::empty(),
+            bias_gradients: Tensor::empty(),
+            relu_mask: Tensor::empty(),
             name: String::from("Empty fully connected layer"),
+            run_state: NetworkRunState::Inference,
         };
 
         return fc;
@@ -123,9 +128,19 @@ impl FullyConnectedLayer {
 
 impl Layer for FullyConnectedLayer {
     fn forward(self: &Self, input: &Tensor, output: &mut Tensor) {
-        Tensor::matrix_multiply_add_relu(input, &self.weights, &self.bias, output);
+        Tensor::matrix_multiply_add_relu(input, &self.weights, &self.bias, output, None);
         return;
     }
+
+    fn backward(
+        self: &mut Self,
+        input: &Tensor,
+        incoming_gradient: &Tensor,
+        outgoing_gradient: &mut Tensor,
+    ) {
+        if self.run_state == NetworkRunState::Training {}
+    }
+
     fn get_output_shape(self: &Self) -> TensorShape {
         return self.bias.get_shape();
     }
@@ -140,6 +155,32 @@ impl Layer for FullyConnectedLayer {
 
     fn get_name(self: &Self) -> String {
         return self.name.clone();
+    }
+
+    fn get_run_mode(self: &Self) -> NetworkRunState {
+        return self.run_state.clone();
+    }
+
+    fn switch_to_inference(self: &mut Self) {
+        // Update run state
+        self.run_state = NetworkRunState::Inference;
+        // Empty gradients
+        self.weights_gradients = Tensor::empty();
+        self.bias_gradients = Tensor::empty();
+    }
+
+    fn switch_to_learning(self: &mut Self) {
+        // Update run state
+        self.run_state = NetworkRunState::Training;
+        // Create tensors with the correct shapes
+        self.weights_gradients = Tensor::new(self.weights.get_shape());
+        self.bias_gradients = Tensor::new(self.bias.get_shape());
+        self.clear_gradients();
+    }
+
+    fn clear_gradients(self: &mut Self) {
+        self.weights_gradients.fill_with_value(0.0);
+        self.bias_gradients.fill_with_value(0.0);
     }
 
     fn get_serialized(self: &Self) -> SerializedLayer {
