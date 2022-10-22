@@ -139,6 +139,16 @@ impl Tensor {
             }
         }
     }
+    pub fn multiply_elementwise(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
+        if (tensor1.shape == tensor2.shape) && (tensor1.shape == result.shape) {
+            // Create operants iterator
+            let operants = tensor1.data.iter().zip(tensor2.data.iter());
+            // Loop through items and calculate results
+            for (rs, (op1, op2)) in result.data.iter_mut().zip(operants) {
+                *rs = *op1 * *op2;
+            }
+        }
+    }
 
     pub fn transpose_ij(input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
         // Check dimensions
@@ -169,7 +179,7 @@ impl Tensor {
         return Ok(());
     }
 
-    pub fn matrix_multiply_transpose(
+    pub fn matrix_multiply_transpose_second(
         tensor1: &Tensor,
         tensor2: &Tensor,
         result: &mut Tensor,
@@ -671,6 +681,25 @@ mod test {
         assert_eq!(expected_result, result);
     }
     #[test]
+    fn test_tensor_multiply_elementwise() {
+        let mut t1 = Tensor::new(TensorShape::new_2d(2, 3));
+        let mut t2 = Tensor::new(TensorShape::new_2d(2, 3));
+        let mut result = Tensor::new(TensorShape::new_2d(2, 3));
+        let mut expected_result = Tensor::new(TensorShape::new_2d(2, 3));
+
+        t1.fill_with_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .unwrap();
+        t2.fill_with_vec(vec![2.0, 1.0, 3.0, 5.0, 2.0, 1.0])
+            .unwrap();
+        expected_result
+            .fill_with_vec(vec![2.0, 2.0, 9.0, 20.0, 10.0, 6.0])
+            .unwrap();
+
+        Tensor::multiply_elementwise(&t1, &t2, &mut result);
+
+        assert_eq!(expected_result, result);
+    }
+    #[test]
     fn test_tensor_transpose_ij() {
         let input_shape = TensorShape::new(2, 3, 2);
         let output_shape = TensorShape::new(3, 2, 2);
@@ -769,7 +798,7 @@ mod test {
         assert_eq!(expected_result, result);
     }
     #[test]
-    fn test_tensor_matrix_multiply_transpose() {
+    fn test_tensor_matrix_multiply_transpose_second() {
         let shape_1 = TensorShape::new(3, 1, 1);
         let shape_2 = TensorShape::new(3, 1, 1);
         let shape_res = TensorShape::new(3, 3, 1);
@@ -791,7 +820,7 @@ mod test {
             strides: TensorStride::new_from_shape(&shape_res),
             data: vec![3.0, 6.0, 9.0, 4.0, 8.0, 12.0, 5.0, 10.0, 15.0],
         };
-        assert!(Tensor::matrix_multiply_transpose(&t1, &t2, &mut result).is_ok());
+        assert!(Tensor::matrix_multiply_transpose_second(&t1, &t2, &mut result).is_ok());
 
         assert_eq!(expected_result, result);
     }
