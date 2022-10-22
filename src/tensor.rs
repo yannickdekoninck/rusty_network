@@ -149,6 +149,16 @@ impl Tensor {
             }
         }
     }
+    pub fn multiply_elementwise_self(tensor1: &mut Tensor, tensor2: &Tensor) {
+        if tensor1.shape == tensor2.shape {
+            // Create operants iterator
+            let operants = tensor1.data.iter_mut().zip(tensor2.data.iter());
+            // Loop through items and calculate results
+            for (op1, op2) in operants {
+                *op1 = *op1 * *op2;
+            }
+        }
+    }
     pub fn multiply_elementwise(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
         if (tensor1.shape == tensor2.shape) && (tensor1.shape == result.shape) {
             // Create operants iterator
@@ -764,6 +774,24 @@ mod test {
         assert!(Tensor::relu_self_and_store_mask(&mut input, &mut mask).is_ok());
 
         assert_eq!(expected_mask, mask);
+    }
+    #[test]
+    fn test_tensor_multiply_elementwise_self() {
+        let mut t1 = Tensor::new(TensorShape::new_2d(2, 3));
+        let mut t2 = Tensor::new(TensorShape::new_2d(2, 3));
+        let mut expected_result = Tensor::new(TensorShape::new_2d(2, 3));
+
+        t1.fill_with_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .unwrap();
+        t2.fill_with_vec(vec![2.0, 1.0, 3.0, 5.0, 2.0, 1.0])
+            .unwrap();
+        expected_result
+            .fill_with_vec(vec![2.0, 2.0, 9.0, 20.0, 10.0, 6.0])
+            .unwrap();
+
+        Tensor::multiply_elementwise_self(&mut t1, &t2);
+
+        assert_eq!(expected_result, t1);
     }
     #[test]
     fn test_tensor_multiply_elementwise() {
