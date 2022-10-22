@@ -160,6 +160,26 @@ impl Tensor {
         }
     }
 
+    pub fn relu_self_and_store_mask(
+        input: &mut Tensor,
+        mask: &mut Tensor,
+    ) -> Result<(), &'static str> {
+        if input.get_shape() != mask.get_shape() {
+            return Err("relu_self_and_store_mask: Input and mask must have the same shape");
+        }
+        for (in_data, mask_data) in input.data.iter_mut().zip(mask.data.iter_mut()) {
+            if *in_data > 0.0 {
+                *mask_data = 1.0;
+            } else {
+                {
+                    *in_data = 0.0;
+                    *mask_data = 0.0;
+                }
+            }
+        }
+        return Ok(());
+    }
+
     pub fn transpose_ij(input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
         // Check dimensions
         let input_shape = input.get_shape();
@@ -293,8 +313,6 @@ impl Tensor {
         // This should save storing and loading of intermediate values
         // Everything should be nice and hot in the cache
 
-
-
         if Tensor::check_matrix_multiply_dimensions(
             weights.get_shape(),
             input.get_shape(),
@@ -332,7 +350,6 @@ impl Tensor {
                                 result.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
 
                             running_result += bias.data[bias_index];
-
 
                             running_result = running_result.max(0.0);
 
@@ -692,6 +709,25 @@ mod test {
         assert_eq!(expected_result, t1);
     }
     #[test]
+    fn test_tensor_relu_self_and_store_mask() {
+        let shape = TensorShape::new(7, 1, 1);
+        let mut input = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![1.0, 2.0, -3.0, -4.0, 5.0, -6.0, 7.0],
+        };
+        let mut mask = Tensor::new(shape);
+
+        let expected_mask = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0],
+        };
+        assert!(Tensor::relu_self_and_store_mask(&mut input, &mut mask).is_ok());
+
+        assert_eq!(expected_mask, mask);
+    }
+    #[test]
     fn test_tensor_multiply_elementwise() {
         let mut t1 = Tensor::new(TensorShape::new_2d(2, 3));
         let mut t2 = Tensor::new(TensorShape::new_2d(2, 3));
@@ -964,12 +1000,10 @@ mod test {
             &tensor_input,
             &tensor_weights,
             &tensor_bias,
-            &mut tensor_result
+            &mut tensor_result,
         );
         assert_eq!(tensor_result, tensor_expected_result);
     }
-
- 
 
     #[test]
     fn test_tensor_serialize_deserialize() {
