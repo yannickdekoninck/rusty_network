@@ -216,8 +216,6 @@ impl Tensor {
     ) -> Result<(), &'static str> {
         // This is simular to matrix multiply but first transposes transposes tensor2 before doing the multiplication
         // Check if the dimensions allow for matrix multiplication
-        let sr = result.shape.get();
-        let s1 = tensor1.shape.get();
         let shape_1 = tensor1.get_shape();
         let shape_2 = tensor2.get_shape();
         let shape_r = result.get_shape();
@@ -226,14 +224,14 @@ impl Tensor {
             return Err("Shapes do not match for matrix multiply transpose");
         }
         // Loop over the outer dimension
-        for k in 0..sr.2 {
-            for j in 0..sr.1 {
-                for i in 0..sr.0 {
+        for k in 0..shape_r.dk {
+            for j in 0..shape_r.dj {
+                for i in 0..shape_r.di {
                     let mut running_result = 0.0;
 
                     // inner adder loop
 
-                    for ii in 0..s1.1 {
+                    for ii in 0..shape_1.dj {
                         let get_index1 =
                             tensor1.get_data_index(&TensorIndex { i: i, j: ii, k: k }) as usize;
 
