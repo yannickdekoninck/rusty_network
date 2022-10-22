@@ -127,7 +127,7 @@ impl MaxPoolLayer {
 }
 
 impl Layer for MaxPoolLayer {
-    fn forward(self: &Self, input: &Tensor, output: &mut Tensor) {
+    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) {
         Tensor::max_pool(input, &self.mask_shape, self.stride, output);
         return;
     }
