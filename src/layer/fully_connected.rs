@@ -173,13 +173,27 @@ impl Layer for FullyConnectedLayer {
         outgoing_gradient: &mut Tensor,
     ) {
         if self.run_state == NetworkRunState::Training {
+            // Apply the relu backrop
+            Tensor::multiply_elementwise_self(&mut self.relu_mask, incoming_gradient);
+
             // bias gradient
-            Tensor::add_to_self(&mut self.bias_gradients, incoming_gradient);
+            Tensor::add_to_self(&mut self.bias_gradients, &self.relu_mask);
             // weights gradient
             Tensor::matrix_multiply_transpose_second(
-                incoming_gradient,
+                &self.relu_mask,
                 input,
                 &mut self.weights_gradients_intermediate,
+            )
+            .unwrap();
+            Tensor::add_to_self(
+                &mut self.weights_gradients,
+                &self.weights_gradients_intermediate,
+            );
+            // outgoing gradient
+            Tensor::matrix_multiply_transpose_first(
+                &self.weights,
+                &self.relu_mask,
+                outgoing_gradient,
             )
             .unwrap();
         }
@@ -315,9 +329,26 @@ mod test {
         let mut incoming_gradient = Tensor::new(TensorShape::new_1d(3));
 
         let mut expected_outgoing_gradient = Tensor::new(TensorShape::new_1d(3));
-        expected_outgoing_gradient.fill_with_vec(vec![5.0, -5.0, 3.0]);
+        assert!(expected_outgoing_gradient
+            .fill_with_vec(vec![5.0, -5.0, 3.0])
+            .is_ok());
 
-        incoming_gradient.fill_with_vec(vec![1.0, 2.0, 3.0]);
+        let mut expected_bias_gradient = Tensor::new(TensorShape::new_1d(3));
+        assert!(expected_bias_gradient
+            .fill_with_vec(vec![1.0, 2.0, 0.0])
+            .is_ok());
+
+        let mut expected_weights_gradient = Tensor::new(TensorShape::new_2d(3, 3));
+        assert!(expected_weights_gradient
+            .fill_with_vec(vec![2.0, 4.0, 0.0, 1.0, 2.0, 0.0, 1.0, 2.0, 0.0])
+            .is_ok());
+
+        let mut expected_relu_maskt = Tensor::new(TensorShape::new_1d(3));
+        assert!(expected_relu_maskt
+            .fill_with_vec(vec![1.0, 1.0, 0.0])
+            .is_ok());
+
+        assert!(incoming_gradient.fill_with_vec(vec![1.0, 2.0, 3.0]).is_ok());
 
         assert!(fcl
             .fill_from_state(weights, bias, &String::from("Test layer"))
@@ -327,8 +358,14 @@ mod test {
 
         fcl.forward(&input, &mut output);
 
-        fcl.backward(&input, &incoming_gradient, &mut outgoing_gradient);
-
+        // Forward pass tests
         assert_eq!(output, expected_output);
+        assert_eq!(fcl.relu_mask, expected_relu_maskt);
+
+        fcl.backward(&input, &incoming_gradient, &mut outgoing_gradient);
+        // Backward pass tests
+        assert_eq!(outgoing_gradient, expected_outgoing_gradient);
+        assert_eq!(fcl.bias_gradients, expected_bias_gradient);
+        assert_eq!(fcl.weights_gradients, expected_weights_gradient);
     }
 }
