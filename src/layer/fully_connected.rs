@@ -16,6 +16,7 @@ pub enum FullyConnectedSerialKeys {
 pub struct FullyConnectedLayer {
     weights: Tensor,
     weights_gradients: Tensor,
+    weights_gradients_intermediate: Tensor,
     bias: Tensor,
     bias_gradients: Tensor,
     relu_mask: Tensor,
@@ -24,10 +25,25 @@ pub struct FullyConnectedLayer {
 }
 
 impl FullyConnectedLayer {
-    fn initialize_gradient_tensors(self: &mut Self) {
-        self.weights_gradients = Tensor::new(self.weights.get_shape());
-        self.weights_gradients.fill_with_value(0.0);
-        self.bias_gradients = Tensor::new(self.bias.get_shape());
+    fn update_gradient_and_intermediate_tensors(self: &mut Self) {
+        match self.run_state {
+            NetworkRunState::Inference => {
+                // Clean up all training related tensors
+                self.weights_gradients = Tensor::empty();
+                self.weights_gradients_intermediate = Tensor::empty();
+                self.bias_gradients = Tensor::empty();
+                self.relu_mask = Tensor::empty();
+            }
+            NetworkRunState::Training => {
+                // Allocate all tensors required for training
+                self.weights_gradients = Tensor::new(self.weights.get_shape());
+                self.weights_gradients_intermediate = Tensor::new(self.weights.get_shape());
+                self.bias_gradients = Tensor::new(self.bias.get_shape());
+                self.relu_mask = Tensor::new(self.get_output_shape());
+                // Fill up all tensors with 0.0
+                self.clear_gradients();
+            }
+        }
     }
 
     pub fn new(input_size: u32, output_size: u32, name: &String) -> FullyConnectedLayer {
@@ -48,6 +64,7 @@ impl FullyConnectedLayer {
             weights: Tensor::empty(),
             bias: Tensor::empty(),
             weights_gradients: Tensor::empty(),
+            weights_gradients_intermediate: Tensor::empty(),
             bias_gradients: Tensor::empty(),
             relu_mask: Tensor::empty(),
             name: String::from("Empty fully connected layer"),
@@ -80,6 +97,8 @@ impl FullyConnectedLayer {
         self.weights = weights;
         self.bias = bias;
         self.name = name.clone();
+        // Update the helper tensors
+        self.update_gradient_and_intermediate_tensors();
         return Ok(());
     }
 
@@ -153,7 +172,17 @@ impl Layer for FullyConnectedLayer {
         incoming_gradient: &Tensor,
         outgoing_gradient: &mut Tensor,
     ) {
-        if self.run_state == NetworkRunState::Training {}
+        if self.run_state == NetworkRunState::Training {
+            // bias gradient
+            Tensor::add_to_self(&mut self.bias_gradients, incoming_gradient);
+            // weights gradient
+            Tensor::matrix_multiply_transpose_second(
+                incoming_gradient,
+                input,
+                &mut self.weights_gradients_intermediate,
+            )
+            .unwrap();
+        }
     }
 
     fn get_output_shape(self: &Self) -> TensorShape {
@@ -180,24 +209,21 @@ impl Layer for FullyConnectedLayer {
         // Update run state
         self.run_state = NetworkRunState::Inference;
         // Empty gradients
-        self.weights_gradients = Tensor::empty();
-        self.bias_gradients = Tensor::empty();
-        self.relu_mask = Tensor::new(self.get_output_shape());
+        self.update_gradient_and_intermediate_tensors();
     }
 
     fn switch_to_learning(self: &mut Self) {
         // Update run state
         self.run_state = NetworkRunState::Training;
         // Create tensors with the correct shapes
-        self.weights_gradients = Tensor::new(self.weights.get_shape());
-        self.bias_gradients = Tensor::new(self.bias.get_shape());
-        self.relu_mask = Tensor::new(self.get_output_shape());
-        self.clear_gradients();
+        self.update_gradient_and_intermediate_tensors();
     }
 
     fn clear_gradients(self: &mut Self) {
+        self.weights_gradients_intermediate.fill_with_value(0.0);
         self.weights_gradients.fill_with_value(0.0);
         self.bias_gradients.fill_with_value(0.0);
+        self.relu_mask.fill_with_value(0.0);
     }
 
     fn get_serialized(self: &Self) -> SerializedLayer {
@@ -296,6 +322,8 @@ mod test {
         assert!(fcl
             .fill_from_state(weights, bias, &String::from("Test layer"))
             .is_ok());
+
+        fcl.switch_to_learning();
 
         fcl.forward(&input, &mut output);
 
