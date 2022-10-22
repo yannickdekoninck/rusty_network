@@ -130,6 +130,16 @@ impl Tensor {
             }
         }
     }
+    pub fn add_to_self(tensor1: &mut Tensor, tensor2: &Tensor) {
+        if tensor1.shape == tensor2.shape {
+            // Create operants iterator
+            let operants = tensor1.data.iter_mut().zip(tensor2.data.iter());
+            // Loop through items and calculate results
+            for (op1, op2) in operants {
+                *op1 = *op1 + *op2;
+            }
+        }
+    }
 
     pub fn scale(tensor: &Tensor, scalar: f32, result: &mut Tensor) {
         if tensor.shape == result.shape {
@@ -679,6 +689,30 @@ mod test {
         Tensor::add(&t1, &t2, &mut result);
 
         assert_eq!(expected_result, result);
+    }
+
+    #[test]
+    fn test_tensor_add_to_self() {
+        let shape = TensorShape::new(2, 3, 1);
+        let mut t1 = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        };
+        let t2 = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+        };
+
+        let expected_result = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![3.0, 5.0, 7.0, 9.0, 11.0, 13.0],
+        };
+        Tensor::add_to_self(&mut t1, &t2);
+
+        assert_eq!(expected_result, t1);
     }
     #[test]
     fn test_tensor_multiply_elementwise() {
