@@ -38,7 +38,7 @@ impl FullyConnectedLayer {
             dj: 1,
             dk: 1,
         });
-        fcl.fill_from_state(weights, bias, name);
+        fcl.fill_from_state(weights, bias, name).unwrap();
         return fcl;
     }
 
@@ -127,8 +127,23 @@ impl FullyConnectedLayer {
 }
 
 impl Layer for FullyConnectedLayer {
-    fn forward(self: &Self, input: &Tensor, output: &mut Tensor) {
-        Tensor::matrix_multiply_add_relu(input, &self.weights, &self.bias, output, None);
+    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) {
+        match self.run_state {
+            NetworkRunState::Inference => {
+                // Take the faster multiply add relu in 1 go
+                Tensor::matrix_multiply_add_relu(input, &self.weights, &self.bias, output);
+            }
+            NetworkRunState::Training => {
+                // Take the piecewise route so we can keep track of the relu mask which we need for backprop
+
+                // Multiply with weights
+                Tensor::matrix_multiply(&self.weights, input, output);
+                // Add bias
+                Tensor::add_to_self(output, &self.bias);
+                // ReLu
+                Tensor::relu_self_and_store_mask(output, &mut self.relu_mask).unwrap();
+            }
+        }
         return;
     }
 
@@ -167,6 +182,7 @@ impl Layer for FullyConnectedLayer {
         // Empty gradients
         self.weights_gradients = Tensor::empty();
         self.bias_gradients = Tensor::empty();
+        self.relu_mask = Tensor::new(self.get_output_shape());
     }
 
     fn switch_to_learning(self: &mut Self) {
@@ -175,6 +191,7 @@ impl Layer for FullyConnectedLayer {
         // Create tensors with the correct shapes
         self.weights_gradients = Tensor::new(self.weights.get_shape());
         self.bias_gradients = Tensor::new(self.bias.get_shape());
+        self.relu_mask = Tensor::new(self.get_output_shape());
         self.clear_gradients();
     }
 
@@ -246,5 +263,44 @@ mod test {
         assert_eq!(other_layer.weights, fc_layer.weights);
         assert_eq!(other_layer.bias, fc_layer.bias);
         assert_eq!(other_layer.name, fc_layer.name);
+    }
+
+    #[test]
+    fn test_backprop() {
+        // Create layer
+
+        let mut fcl = FullyConnectedLayer::empty();
+        let mut weights = Tensor::new(TensorShape::new_2d(3, 3));
+        assert!(weights
+            .fill_with_vec(vec![1.0, 2.0, 3.0, -1.0, -2.0, -8.0, 1.0, 1.0, -2.0])
+            .is_ok());
+
+        let mut bias = Tensor::new(TensorShape::new_1d(3));
+        assert!(bias.fill_with_vec(vec![1.0, 0.0, 2.0]).is_ok());
+
+        let mut input = Tensor::new(TensorShape::new_1d(3));
+        assert!(input.fill_with_vec(vec![2.0, 1.0, 1.0]).is_ok());
+
+        let mut expected_output = Tensor::new(TensorShape::new_1d(3));
+        assert!(expected_output.fill_with_vec(vec![3.0, 3.0, 0.0]).is_ok());
+
+        let mut output = Tensor::new(TensorShape::new_1d(3));
+        let mut outgoing_gradient = Tensor::new(TensorShape::new_1d(3));
+        let mut incoming_gradient = Tensor::new(TensorShape::new_1d(3));
+
+        let mut expected_outgoing_gradient = Tensor::new(TensorShape::new_1d(3));
+        expected_outgoing_gradient.fill_with_vec(vec![5.0, -5.0, 3.0]);
+
+        incoming_gradient.fill_with_vec(vec![1.0, 2.0, 3.0]);
+
+        assert!(fcl
+            .fill_from_state(weights, bias, &String::from("Test layer"))
+            .is_ok());
+
+        fcl.forward(&input, &mut output);
+
+        fcl.backward(&input, &incoming_gradient, &mut outgoing_gradient);
+
+        assert_eq!(output, expected_output);
     }
 }
