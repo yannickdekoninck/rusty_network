@@ -147,7 +147,20 @@ impl MaxPoolLayer {
 
 impl Layer for MaxPoolLayer {
     fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
-        Tensor::max_pool(input, &self.mask_shape, self.stride, output);
+        match self.run_state {
+            NetworkRunState::Inference => {
+                Tensor::max_pool(input, &self.mask_shape, self.stride, output);
+            }
+            NetworkRunState::Training => {
+                Tensor::max_pool_track_origin(
+                    input,
+                    &self.mask_shape,
+                    self.stride,
+                    output,
+                    &mut self.max_pool_origin,
+                )?;
+            }
+        }
         return Ok(());
     }
     fn get_output_shape(self: &Self) -> TensorShape {
