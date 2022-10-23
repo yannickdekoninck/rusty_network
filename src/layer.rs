@@ -55,6 +55,7 @@ pub trait Layer {
     fn backward(
         self: &mut Self,
         input: &Tensor,
+        output: &Tensor,
         incoming_gradient: &Tensor,
         outgoing_gradient: &mut Tensor,
     ) -> Result<(), &'static str> {

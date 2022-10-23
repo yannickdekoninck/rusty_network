@@ -167,6 +167,7 @@ impl Layer for MaxPoolLayer {
     fn backward(
         self: &mut Self,
         _input: &Tensor,
+        _output: &Tensor,
         incoming_gradient: &Tensor,
         outgoing_gradient: &mut Tensor,
     ) -> Result<(), &'static str> {
@@ -353,7 +354,7 @@ mod test {
         assert_eq!(mpl.max_pool_origin, expected_origin_track);
 
         assert!(mpl
-            .backward(&image, &incoming_gradient, &mut outgoing_gradient)
+            .backward(&image, &output, &incoming_gradient, &mut outgoing_gradient)
             .is_ok());
         // Backward pass tests
         assert_eq!(outgoing_gradient, expected_outgoing_gradient);

@@ -169,6 +169,7 @@ impl Layer for FullyConnectedLayer {
     fn backward(
         self: &mut Self,
         input: &Tensor,
+        _output: &Tensor,
         incoming_gradient: &Tensor,
         outgoing_gradient: &mut Tensor,
     ) -> Result<(), &'static str> {
@@ -364,7 +365,7 @@ mod test {
         assert_eq!(fcl.relu_mask, expected_relu_maskt);
 
         assert!(fcl
-            .backward(&input, &incoming_gradient, &mut outgoing_gradient)
+            .backward(&input, &output, &incoming_gradient, &mut outgoing_gradient)
             .is_ok());
         // Backward pass tests
         assert_eq!(outgoing_gradient, expected_outgoing_gradient);
