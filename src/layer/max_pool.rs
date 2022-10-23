@@ -20,6 +20,7 @@ pub struct MaxPoolLayer {
     stride: u32,
     name: String,
     run_state: NetworkRunState,
+    max_pool_origin: Vec<u32>,
 }
 
 impl MaxPoolLayer {
@@ -55,8 +56,24 @@ impl MaxPoolLayer {
             stride: 1,
             name: String::from("Empty max pool layer"),
             run_state: NetworkRunState::Inference,
+            max_pool_origin: vec![],
         };
         return mp;
+    }
+
+    fn update_gradient_and_intermediate_tensors(self: &mut Self) {
+        match self.run_state {
+            NetworkRunState::Inference => {
+                // Clean up all training related tensors
+                self.max_pool_origin = vec![];
+            }
+            NetworkRunState::Training => {
+                // Allocate a vector of indices to store the origin of the max pool
+                self.max_pool_origin = vec![0; self.output_shape.total_size() as usize];
+                // Fill up all tensors with 0.0
+                self.clear_gradients();
+            }
+        }
     }
 
     pub fn fill_from_state(
@@ -175,6 +192,26 @@ impl Layer for MaxPoolLayer {
                 return Err("Layer type does not match max pool type");
             }
         }
+    }
+
+    fn clear_gradients(self: &mut Self) {
+        for v in self.max_pool_origin.iter_mut() {
+            *v = 0;
+        }
+    }
+
+    fn switch_to_inference(self: &mut Self) {
+        // Update run state
+        self.run_state = NetworkRunState::Inference;
+        // Empty gradients
+        self.update_gradient_and_intermediate_tensors();
+    }
+
+    fn switch_to_learning(self: &mut Self) {
+        // Update run state
+        self.run_state = NetworkRunState::Training;
+        // Create tensors with the correct shapes
+        self.update_gradient_and_intermediate_tensors();
     }
 }
 
