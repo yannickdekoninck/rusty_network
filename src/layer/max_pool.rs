@@ -301,4 +301,55 @@ mod test {
         );
         assert_eq!(mpl2.stride, 1);
     }
+
+    #[test]
+    fn test_backprop() {
+        // Create layer
+
+        let mut mpl = MaxPoolLayer::empty();
+        let mut image = Tensor::new(TensorShape::new_2d(3, 3));
+        assert!(image
+            .fill_with_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+            .is_ok());
+
+        let mask_shape = TensorShape::new_2d(2, 2);
+        let output_shape = TensorShape::new_2d(2, 2);
+
+        let mut output = Tensor::new(output_shape.clone());
+        let mut expected_output = Tensor::new(output_shape.clone());
+        expected_output.fill_with_vec(vec![5.0, 6.0, 8.0, 9.0]);
+
+        let mut incoming_gradient = Tensor::new(output_shape.clone());
+        incoming_gradient.fill_with_vec(vec![5.0, 4.0, 3.0, 2.0]);
+
+        let mut outgoing_gradient = Tensor::new(image.get_shape());
+        let mut expected_outgoing_gradient = Tensor::new(image.get_shape());
+        expected_outgoing_gradient.fill_with_vec(vec![0.0, 0.0, 0.0, 0.0, 5.0, 4.0, 0.0, 3.0, 2.0]);
+
+        let expected_origin_track: Vec<u32> = vec![4, 5, 7, 8];
+
+        // Create max poollayer
+        assert!(mpl
+            .fill_from_state(
+                image.get_shape(),
+                mask_shape,
+                1,
+                &String::from("Test layer")
+            )
+            .is_ok());
+
+        mpl.switch_to_learning();
+
+        assert!(mpl.forward(&image, &mut output).is_ok());
+
+        // Forward pass tests
+        assert_eq!(output, expected_output);
+        assert_eq!(mpl.max_pool_origin, expected_origin_track);
+
+        assert!(mpl
+            .backward(&image, &incoming_gradient, &mut outgoing_gradient)
+            .is_ok());
+        // Backward pass tests
+        assert_eq!(outgoing_gradient, expected_outgoing_gradient);
+    }
 }
