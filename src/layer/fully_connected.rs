@@ -357,13 +357,15 @@ mod test {
 
         fcl.switch_to_learning();
 
-        fcl.forward(&input, &mut output);
+        assert!(fcl.forward(&input, &mut output).is_ok());
 
         // Forward pass tests
         assert_eq!(output, expected_output);
         assert_eq!(fcl.relu_mask, expected_relu_maskt);
 
-        fcl.backward(&input, &incoming_gradient, &mut outgoing_gradient);
+        assert!(fcl
+            .backward(&input, &incoming_gradient, &mut outgoing_gradient)
+            .is_ok());
         // Backward pass tests
         assert_eq!(outgoing_gradient, expected_outgoing_gradient);
         assert_eq!(fcl.bias_gradients, expected_bias_gradient);
