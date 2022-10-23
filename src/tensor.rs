@@ -599,6 +599,56 @@ impl Tensor {
             }
         }
     }
+    pub fn max_pool_track_origin(
+        image: &Tensor,
+        mask_shape: &TensorShape,
+        stride: u32,
+        result: &mut Tensor,
+        origin_list: &mut Vec<u32>,
+    ) -> Result<(), &'static str> {
+        if !Tensor::check_max_pooling_dimensions(
+            &image.get_shape(),
+            mask_shape,
+            stride,
+            &result.get_shape(),
+        ) {
+            return Err("Max pooling dimensions don't match");
+        }
+        let result_shape = result.get_shape();
+        if result_shape.total_size() as usize != origin_list.len() {
+            return Err("Origin tracker list size is not equal to number of output items");
+        }
+        // Max pooling loop
+        for k in 0..result_shape.dk {
+            for j in 0..result_shape.dj {
+                for i in 0..result_shape.di {
+                    let mut running_max = f32::NEG_INFINITY;
+
+                    let output_ti = TensorIndex { i: i, j: j, k: k };
+                    let output_index = result.get_data_index(&output_ti);
+                    let mut input_index: u32 = 0;
+
+                    for jj in 0..mask_shape.dj {
+                        for ii in 0..mask_shape.di {
+                            let input_ti = TensorIndex {
+                                i: i * stride + ii,
+                                j: j * stride + jj,
+                                k,
+                            };
+                            let current_item = image.get_item(&input_ti);
+                            if current_item > running_max {
+                                running_max = current_item;
+                                input_index = image.get_data_index(&input_ti);
+                            }
+                        }
+                    }
+                    result.set_item(&output_ti, running_max);
+                    origin_list[output_index as usize] = input_index;
+                }
+            }
+        }
+        return Ok(());
+    }
 
     pub fn softmax(input: &Tensor, output: &mut Tensor) {
         if input.get_shape() == output.get_shape() {
@@ -1060,6 +1110,36 @@ mod test {
         Tensor::max_pool(&tensor_image, &shape_mask, stride, &mut tensor_result);
 
         assert_eq!(tensor_result, tensor_expected_result);
+    }
+    #[test]
+    fn test_max_pooling_track_output() {
+        let shape_input = TensorShape::new(3, 3, 1);
+        let shape_mask = TensorShape::new(2, 2, 1);
+        let shape_result = TensorShape::new(2, 2, 1);
+        let mut output_track: Vec<u32> = vec![0; shape_result.total_size() as usize];
+        let stride: u32 = 1;
+        let mut tensor_image = Tensor::new(shape_input);
+        assert!(tensor_image
+            .fill_with_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+            .is_ok());
+        let mut tensor_result = Tensor::new(shape_result);
+        let tensor_expected_result = Tensor {
+            strides: TensorStride::new_from_shape(&shape_result),
+            shape: shape_result,
+            data: vec![5.0, 6.0, 8.0, 9.0],
+        };
+        let expected_track_result: Vec<u32> = vec![4, 5, 7, 8];
+        assert!(Tensor::max_pool_track_origin(
+            &tensor_image,
+            &shape_mask,
+            stride,
+            &mut tensor_result,
+            &mut output_track,
+        )
+        .is_ok());
+
+        assert_eq!(tensor_result, tensor_expected_result);
+        assert_eq!(expected_track_result, output_track);
     }
 
     #[test]
