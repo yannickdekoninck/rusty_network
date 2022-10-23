@@ -1,7 +1,7 @@
 use super::SerializedLayer;
-use crate::layer::Layer;
 use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
+use crate::{layer::Layer, network::NetworkRunState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -19,6 +19,7 @@ pub struct MaxPoolLayer {
     output_shape: TensorShape,
     stride: u32,
     name: String,
+    run_state: NetworkRunState,
 }
 
 impl MaxPoolLayer {
@@ -53,6 +54,7 @@ impl MaxPoolLayer {
             },
             stride: 1,
             name: String::from("Empty max pool layer"),
+            run_state: NetworkRunState::Inference,
         };
         return mp;
     }
@@ -105,24 +107,24 @@ impl MaxPoolLayer {
         let mask_shape_data = data
             .get(&MaxPoolSerialKeys::MaskShape)
             .expect("Cannot access mask shape data");
-        self.mask_shape =
+        let mask_shape: TensorShape =
             bincode::deserialize(mask_shape_data).expect("Cannot deserialize mask shape data");
         let input_shape_data = data
             .get(&MaxPoolSerialKeys::InputShape)
             .expect("Cannot access input shape data");
-        self.input_shape =
+        let input_shape: TensorShape =
             bincode::deserialize(input_shape_data).expect("Cannot deserialize input shape data");
         let stride_data = data
             .get(&MaxPoolSerialKeys::Stride)
             .expect("Cannot access stride data");
-        self.stride = bincode::deserialize(&stride_data).expect("Cannot deserialize stride data");
+        let stride: u32 =
+            bincode::deserialize(&stride_data).expect("Cannot deserialize stride data");
 
         let name_data = data
             .get(&MaxPoolSerialKeys::Name)
             .expect("Cannot access name data");
-        self.name = bincode::deserialize(name_data).expect("Cannot deserialize name data");
-
-        return Ok(());
+        let name: String = bincode::deserialize(name_data).expect("Cannot deserialize name data");
+        return self.fill_from_state(input_shape, mask_shape, stride, &name);
     }
 }
 
