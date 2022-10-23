@@ -148,12 +148,12 @@ impl ConvolutionalLayer {
 }
 
 impl Layer for ConvolutionalLayer {
-    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) {
+    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
         // Convolution for every output channel
         for i in 0..self.output_shape.dk {
             Tensor::convolution(input, &self.kernels[i as usize], self.stride, output, i);
         }
-        return;
+        return Ok(());
     }
     fn get_output_shape(self: &Self) -> TensorShape {
         return self.output_shape.clone();

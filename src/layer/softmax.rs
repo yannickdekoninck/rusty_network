@@ -77,9 +77,9 @@ impl SoftmaxLayer {
 }
 
 impl Layer for SoftmaxLayer {
-    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) {
+    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
         Tensor::softmax(input, output);
-        return;
+        return Ok(());
     }
     fn get_output_shape(self: &Self) -> TensorShape {
         return self.shape.clone();

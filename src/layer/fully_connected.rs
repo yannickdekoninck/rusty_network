@@ -146,7 +146,7 @@ impl FullyConnectedLayer {
 }
 
 impl Layer for FullyConnectedLayer {
-    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) {
+    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
         match self.run_state {
             NetworkRunState::Inference => {
                 // Take the faster multiply add relu in 1 go
@@ -160,10 +160,10 @@ impl Layer for FullyConnectedLayer {
                 // Add bias
                 Tensor::add_to_self(output, &self.bias);
                 // ReLu
-                Tensor::relu_self_and_store_mask(output, &mut self.relu_mask).unwrap();
+                Tensor::relu_self_and_store_mask(output, &mut self.relu_mask)?;
             }
         }
-        return;
+        return Ok(());
     }
 
     fn backward(
@@ -171,7 +171,7 @@ impl Layer for FullyConnectedLayer {
         input: &Tensor,
         incoming_gradient: &Tensor,
         outgoing_gradient: &mut Tensor,
-    ) {
+    ) -> Result<(), &'static str> {
         if self.run_state == NetworkRunState::Training {
             // Apply the relu backrop
             Tensor::multiply_elementwise_self(&mut self.relu_mask, incoming_gradient);
@@ -183,8 +183,7 @@ impl Layer for FullyConnectedLayer {
                 &self.relu_mask,
                 input,
                 &mut self.weights_gradients_intermediate,
-            )
-            .unwrap();
+            )?;
             Tensor::add_to_self(
                 &mut self.weights_gradients,
                 &self.weights_gradients_intermediate,
@@ -194,8 +193,10 @@ impl Layer for FullyConnectedLayer {
                 &self.weights,
                 &self.relu_mask,
                 outgoing_gradient,
-            )
-            .unwrap();
+            )?;
+            return Ok(());
+        } else {
+            return Err("Can only do backprop in training mode");
         }
     }
 
