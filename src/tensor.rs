@@ -141,6 +141,25 @@ impl Tensor {
         }
     }
 
+    pub fn add_from_index_list(
+        tensor1: &Tensor,
+        tensor2: &mut Tensor,
+        index_list: &Vec<u32>,
+    ) -> Result<(), &'static str> {
+        if index_list.len() > tensor1.get_shape().total_size() as usize {
+            return Err("Index list is too long");
+        }
+        let t2_items = tensor2.get_shape().total_size();
+        for (t1_index, t2_index) in index_list.iter().enumerate() {
+            if *t2_index >= t2_items {
+                return Err("Tensor 2 index out of bounds");
+            }
+            tensor2.data[*t2_index as usize] += tensor1.data[t1_index]
+        }
+
+        return Ok(());
+    }
+
     pub fn scale(tensor: &Tensor, scalar: f32, result: &mut Tensor) {
         if tensor.shape == result.shape {
             // Loop through items and calculate results
@@ -805,6 +824,29 @@ mod test {
         Tensor::add_to_self(&mut t1, &t2);
 
         assert_eq!(expected_result, t1);
+    }
+
+    #[test]
+    fn test_tensor_add_from_index_list() {
+        let result_shape = TensorShape::new(2, 2, 1);
+        let image_shape = TensorShape::new(3, 3, 1);
+        let index_list: Vec<u32> = vec![0, 1, 0, 3];
+        let max_pool_output = Tensor {
+            shape: result_shape,
+            strides: TensorStride::new_from_shape(&result_shape),
+            data: vec![1.0, 2.0, 3.0, 4.0],
+        };
+        let expected_image = Tensor {
+            shape: image_shape.clone(),
+            strides: TensorStride::new_from_shape(&image_shape),
+            data: vec![4.0, 2.0, 0.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        };
+
+        let mut image = Tensor::new(image_shape);
+
+        assert!(Tensor::add_from_index_list(&max_pool_output, &mut image, &index_list).is_ok());
+
+        assert_eq!(expected_image, image);
     }
     #[test]
     fn test_tensor_relu_self_and_store_mask() {
