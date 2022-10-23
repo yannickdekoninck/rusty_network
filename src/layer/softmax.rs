@@ -3,6 +3,7 @@ use std::cmp::Eq;
 use std::collections::HashMap;
 
 use crate::layer::Layer;
+use crate::network::NetworkRunState;
 use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
 
@@ -18,6 +19,9 @@ pub enum SoftMaxSerialKeys {
 pub struct SoftmaxLayer {
     shape: TensorShape,
     name: String,
+    intermediate1: Tensor,
+    intermediate2: Tensor,
+    run_state: NetworkRunState,
 }
 
 impl SoftmaxLayer {
@@ -35,9 +39,30 @@ impl SoftmaxLayer {
                 dk: 1,
             },
             name: String::from("Empty softmax layer"),
+            intermediate1: Tensor::empty(),
+            intermediate2: Tensor::empty(),
+            run_state: NetworkRunState::Inference,
         };
 
         return sm;
+    }
+
+    fn update_gradient_and_intermediate_tensors(self: &mut Self) {
+        match self.run_state {
+            NetworkRunState::Inference => {
+                // Clean up all training related tensors
+
+                self.intermediate1 = Tensor::empty();
+                self.intermediate2 = Tensor::empty();
+            }
+            NetworkRunState::Training => {
+                // Allocate all tensors required for training
+                self.intermediate1 = Tensor::new(TensorShape::new_1d(1));
+                self.intermediate2 = Tensor::new(self.shape);
+                // Fill up all tensors with 0.0
+                self.clear_gradients();
+            }
+        }
     }
 
     pub fn fill_from_state(
@@ -47,6 +72,7 @@ impl SoftmaxLayer {
     ) -> Result<(), &'static str> {
         self.shape = shape;
         self.name = name.clone();
+        self.update_gradient_and_intermediate_tensors();
         return Ok(());
     }
 
@@ -79,6 +105,15 @@ impl SoftmaxLayer {
 impl Layer for SoftmaxLayer {
     fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
         Tensor::softmax(input, output);
+        return Ok(());
+    }
+    fn backward(
+        self: &mut Self,
+        input: &Tensor,
+        output: &Tensor,
+        incoming_gradient: &Tensor,
+        outgoing_gradient: &mut Tensor,
+    ) -> Result<(), &'static str> {
         return Ok(());
     }
     fn get_output_shape(self: &Self) -> TensorShape {
@@ -118,6 +153,21 @@ impl Layer for SoftmaxLayer {
                 return Err("Layer type does not match soft max type");
             }
         }
+    }
+
+    fn switch_to_inference(self: &mut Self) {
+        self.run_state = NetworkRunState::Inference;
+        self.update_gradient_and_intermediate_tensors();
+    }
+
+    fn switch_to_learning(self: &mut Self) {
+        self.run_state = NetworkRunState::Training;
+        self.update_gradient_and_intermediate_tensors();
+    }
+
+    fn clear_gradients(self: &mut Self) {
+        self.intermediate1.fill_with_value(0.0);
+        self.intermediate2.fill_with_value(0.0);
     }
 }
 
