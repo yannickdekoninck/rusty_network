@@ -166,7 +166,7 @@ impl Layer for MaxPoolLayer {
 
     fn backward(
         self: &mut Self,
-        input: &Tensor,
+        _input: &Tensor,
         incoming_gradient: &Tensor,
         outgoing_gradient: &mut Tensor,
     ) -> Result<(), &'static str> {
@@ -317,14 +317,20 @@ mod test {
 
         let mut output = Tensor::new(output_shape.clone());
         let mut expected_output = Tensor::new(output_shape.clone());
-        expected_output.fill_with_vec(vec![5.0, 6.0, 8.0, 9.0]);
+        assert!(expected_output
+            .fill_with_vec(vec![5.0, 6.0, 8.0, 9.0])
+            .is_ok());
 
         let mut incoming_gradient = Tensor::new(output_shape.clone());
-        incoming_gradient.fill_with_vec(vec![5.0, 4.0, 3.0, 2.0]);
+        assert!(incoming_gradient
+            .fill_with_vec(vec![5.0, 4.0, 3.0, 2.0])
+            .is_ok());
 
         let mut outgoing_gradient = Tensor::new(image.get_shape());
         let mut expected_outgoing_gradient = Tensor::new(image.get_shape());
-        expected_outgoing_gradient.fill_with_vec(vec![0.0, 0.0, 0.0, 0.0, 5.0, 4.0, 0.0, 3.0, 2.0]);
+        assert!(expected_outgoing_gradient
+            .fill_with_vec(vec![0.0, 0.0, 0.0, 0.0, 5.0, 4.0, 0.0, 3.0, 2.0])
+            .is_ok());
 
         let expected_origin_track: Vec<u32> = vec![4, 5, 7, 8];
 
