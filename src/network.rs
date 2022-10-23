@@ -11,7 +11,7 @@ use std::error::Error;
 
 // An enum to indicate the state of a network and its layers
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum NetworkRunState {
     Inference,
     Training,
@@ -180,7 +180,7 @@ impl Network {
             let (input_slice, output_slice) = intermediate_state_slice.split_at_mut(i + 1);
 
             // Load the layer
-            let layer = &self.layers[i];
+            let layer = &mut self.layers[i];
 
             // Get the correct input and output
             let input_tensor = input_slice.last().unwrap();
