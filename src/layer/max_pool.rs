@@ -163,6 +163,19 @@ impl Layer for MaxPoolLayer {
         }
         return Ok(());
     }
+
+    fn backward(
+        self: &mut Self,
+        input: &Tensor,
+        incoming_gradient: &Tensor,
+        outgoing_gradient: &mut Tensor,
+    ) -> Result<(), &'static str> {
+        // Make sure the outgoing gradient is clean
+        outgoing_gradient.fill_with_value(0.0);
+        // Perform the backprop
+        Tensor::add_from_index_list(incoming_gradient, outgoing_gradient, &self.max_pool_origin)?;
+        return Ok(());
+    }
     fn get_output_shape(self: &Self) -> TensorShape {
         return self.output_shape.clone();
     }
