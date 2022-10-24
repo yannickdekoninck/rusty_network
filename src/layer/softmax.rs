@@ -109,11 +109,35 @@ impl Layer for SoftmaxLayer {
     }
     fn backward(
         self: &mut Self,
-        input: &Tensor,
+        _input: &Tensor,
         output: &Tensor,
         incoming_gradient: &Tensor,
         outgoing_gradient: &mut Tensor,
     ) -> Result<(), &'static str> {
+        if self.run_state == NetworkRunState::Inference {
+            return Err("Can only do backprop in training mode");
+        }
+        // softmax Transoped @ incoming gradient -> yields 1x1x1 tensors
+        Tensor::matrix_multiply_transpose_first(
+            output,
+            incoming_gradient,
+            &mut self.intermediate1,
+        )?;
+
+        // Invert
+        Tensor::scale_self(&mut self.intermediate1, -1.0);
+
+        // Multiply with output
+
+        Tensor::matrix_multiply(output, &self.intermediate1, &mut self.intermediate2);
+
+        // Element wise multiplication for diagonal elements
+        Tensor::multiply_elementwise(&output, incoming_gradient, outgoing_gradient);
+
+        // Adding up both results
+
+        Tensor::add_to_self(outgoing_gradient, &self.intermediate2);
+
         return Ok(());
     }
     fn get_output_shape(self: &Self) -> TensorShape {
