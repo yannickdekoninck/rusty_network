@@ -168,6 +168,13 @@ impl Tensor {
             }
         }
     }
+
+    pub fn scale_self(tensor: &mut Tensor, scalar: f32) {
+        // Loop through items and calculate results
+        for sl in tensor.data.iter_mut() {
+            *sl *= scalar;
+        }
+    }
     pub fn multiply_elementwise_self(tensor1: &mut Tensor, tensor2: &Tensor) {
         if tensor1.shape == tensor2.shape {
             // Create operants iterator
@@ -950,6 +957,26 @@ mod test {
         Tensor::scale(&t1, scalar, &mut result);
 
         assert_eq!(expected_result, result);
+    }
+
+    #[test]
+    fn test_tensor_scale_self() {
+        let shape = TensorShape::new(2, 3, 1);
+        let mut t1 = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        };
+        let scalar = 2.0;
+
+        let expected_result = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0],
+        };
+        Tensor::scale_self(&mut t1, scalar);
+
+        assert_eq!(expected_result, t1);
     }
     #[test]
     fn test_softmax() {
