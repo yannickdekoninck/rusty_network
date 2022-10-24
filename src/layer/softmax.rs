@@ -226,4 +226,25 @@ mod test {
             },
         );
     }
+
+    #[test]
+    fn test_backprop() {
+        let mut input = Tensor::new(TensorShape::new_1d(3));
+        let mut output = Tensor::new(TensorShape::new_1d(3));
+        let mut expected_output = Tensor::new(TensorShape::new_1d(3));
+        assert!(input.fill_with_vec(vec![1.0, 2.0, 3.0]).is_ok());
+        let sum: f32 = (1.0 as f32).exp() + (2.0 as f32).exp() + (3.0 as f32).exp();
+        assert!(expected_output
+            .fill_with_vec(vec![
+                (1.0 as f32).exp() / sum,
+                (2.0 as f32).exp() / sum,
+                (3.0 as f32).exp() / sum,
+            ])
+            .is_ok());
+        let mut sml = SoftmaxLayer::new(input.get_shape(), &String::from("softmax layer")).unwrap();
+        sml.switch_to_learning();
+        assert!(sml.forward(&input, &mut output).is_ok());
+
+        assert_eq!(output, expected_output);
+    }
 }
