@@ -198,6 +198,7 @@ impl Layer for SoftmaxLayer {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::tensor::helper::TensorIndex;
 
     #[test]
     fn test_serialize_deserialize() {
@@ -231,20 +232,49 @@ mod test {
     fn test_backprop() {
         let mut input = Tensor::new(TensorShape::new_1d(3));
         let mut output = Tensor::new(TensorShape::new_1d(3));
+        let mut incoming_gradient = Tensor::new(TensorShape::new_1d(3));
+        let mut outgoing_gradient = Tensor::new(TensorShape::new_1d(3));
+        let mut expected_outgoing_gradient = Tensor::new(TensorShape::new_1d(3));
         let mut expected_output = Tensor::new(TensorShape::new_1d(3));
         assert!(input.fill_with_vec(vec![1.0, 2.0, 3.0]).is_ok());
         let sum: f32 = (1.0 as f32).exp() + (2.0 as f32).exp() + (3.0 as f32).exp();
-        assert!(expected_output
+        let ov = vec![
+            (1.0 as f32).exp() / sum,
+            (2.0 as f32).exp() / sum,
+            (3.0 as f32).exp() / sum,
+        ];
+        assert!(expected_output.fill_with_vec(ov.clone()).is_ok());
+        assert!(incoming_gradient.fill_with_vec(vec![4.0, 5.0, 6.0]).is_ok());
+        let mut jacobian = Tensor::new(TensorShape::new_2d(3, 3));
+        assert!(jacobian
             .fill_with_vec(vec![
-                (1.0 as f32).exp() / sum,
-                (2.0 as f32).exp() / sum,
-                (3.0 as f32).exp() / sum,
+                ov[0] * (1.0 - ov[0]),
+                -ov[0] * ov[1],
+                -ov[0] * ov[2],
+                -ov[0] * ov[1],
+                ov[1] * (1.0 - ov[1]),
+                -ov[1] * ov[2],
+                -ov[0] * ov[2],
+                -ov[1] * ov[2],
+                ov[2] * (1.0 - ov[2]),
             ])
             .is_ok());
+        Tensor::matrix_multiply(
+            &jacobian,
+            &incoming_gradient,
+            &mut expected_outgoing_gradient,
+        );
         let mut sml = SoftmaxLayer::new(input.get_shape(), &String::from("softmax layer")).unwrap();
         sml.switch_to_learning();
         assert!(sml.forward(&input, &mut output).is_ok());
-
         assert_eq!(output, expected_output);
+        assert!(sml
+            .backward(
+                &input,
+                &mut output,
+                &incoming_gradient,
+                &mut outgoing_gradient
+            )
+            .is_ok());
     }
 }

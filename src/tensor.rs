@@ -78,6 +78,14 @@ impl Tensor {
         return self.shape.clone();
     }
 
+    pub fn get_norm(self: &Self) -> f32 {
+        let mut total = 0.;
+        for d in self.data.iter() {
+            total += (*d).powi(2);
+        }
+        return total.sqrt();
+    }
+
     pub fn fill_with_uniform(&mut self, min: f32, max: f32) {
         let uniform_distribution = rand::distributions::Uniform::new_inclusive(min, max);
         let mut rng = rand::prelude::thread_rng();
@@ -759,6 +767,17 @@ mod test {
         let data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         assert!(t.fill_with_vec(data).is_ok());
         assert_eq!(t.get_item(&TensorIndex { i: 0, j: 1, k: 1 }), 7.0);
+    }
+    #[test]
+    fn test_get_norm() {
+        let mut t = Tensor::new(TensorShape {
+            di: 1,
+            dj: 3,
+            dk: 1,
+        });
+        let data: Vec<f32> = vec![1.0, 2.0, 3.0];
+        assert!(t.fill_with_vec(data).is_ok());
+        assert_eq!(t.get_norm(), (14 as f32).sqrt());
     }
     #[test]
     fn test_tensor_equals() {
