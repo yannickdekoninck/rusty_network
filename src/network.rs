@@ -187,7 +187,7 @@ impl Network {
             let output_tensor = output_slice.first_mut().unwrap();
 
             // Propagate through network
-            layer.forward(input_tensor, output_tensor);
+            layer.forward(input_tensor, output_tensor)?;
         }
 
         return Ok(());

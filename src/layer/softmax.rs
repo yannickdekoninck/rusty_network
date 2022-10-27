@@ -198,7 +198,6 @@ impl Layer for SoftmaxLayer {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::tensor::helper::TensorIndex;
 
     #[test]
     fn test_serialize_deserialize() {

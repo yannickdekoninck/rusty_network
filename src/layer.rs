@@ -54,10 +54,10 @@ pub trait Layer {
     // Temporary blank impl so we can test these
     fn backward(
         self: &mut Self,
-        input: &Tensor,
-        output: &Tensor,
-        incoming_gradient: &Tensor,
-        outgoing_gradient: &mut Tensor,
+        _input: &Tensor,
+        _output: &Tensor,
+        _incoming_gradient: &Tensor,
+        _outgoing_gradient: &mut Tensor,
     ) -> Result<(), &'static str> {
         return Ok(());
     }
