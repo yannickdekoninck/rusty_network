@@ -151,6 +151,9 @@ impl Layer for SoftmaxLayer {
     fn get_name(self: &Self) -> String {
         return self.name.clone();
     }
+    fn get_run_mode(self: &Self) -> NetworkRunState {
+        return self.run_state.clone();
+    }
     fn get_serialized(self: &Self) -> SerializedLayer {
         // Create empty map
         let mut serial_data: HashMap<SoftMaxSerialKeys, Vec<u8>> = HashMap::new();

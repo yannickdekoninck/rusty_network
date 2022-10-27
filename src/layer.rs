@@ -58,16 +58,12 @@ pub trait Layer {
         _output: &Tensor,
         _incoming_gradient: &Tensor,
         _outgoing_gradient: &mut Tensor,
-    ) -> Result<(), &'static str> {
-        return Ok(());
-    }
+    ) -> Result<(), &'static str>;
     fn apply_gradients(self: &mut Self) {}
-    fn clear_gradients(self: &mut Self) {}
-    fn switch_to_learning(self: &mut Self) {}
-    fn switch_to_inference(self: &mut Self) {}
-    fn get_run_mode(self: &Self) -> NetworkRunState {
-        return NetworkRunState::Inference;
-    }
+    fn clear_gradients(self: &mut Self);
+    fn switch_to_learning(self: &mut Self);
+    fn switch_to_inference(self: &mut Self);
+    fn get_run_mode(self: &Self) -> NetworkRunState;
     fn get_input_shape(self: &Self) -> TensorShape;
     fn get_output_shape(self: &Self) -> TensorShape;
     fn get_name(self: &Self) -> String;
