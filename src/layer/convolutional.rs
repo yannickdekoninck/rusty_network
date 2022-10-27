@@ -1,7 +1,7 @@
 use super::SerializedLayer;
-use crate::layer::Layer;
 use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
+use crate::{layer::Layer, network::NetworkRunState};
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -16,13 +16,31 @@ pub enum ConvolutionalSerialKeys {
 
 pub struct ConvolutionalLayer {
     kernels: Vec<Tensor>,
+    kernel_gradients: Vec<Tensor>,
     stride: u32,
     input_shape: TensorShape,
     output_shape: TensorShape,
     name: String,
+    run_state: NetworkRunState,
 }
 
 impl ConvolutionalLayer {
+    fn update_gradient_and_intermediate_tensors(self: &mut Self) {
+        match self.run_state {
+            NetworkRunState::Inference => {
+                // No gradients required
+                self.kernel_gradients = vec![];
+            }
+            NetworkRunState::Training => {
+                // Populate the kernel gradients vector
+                self.kernel_gradients = vec![];
+                for k in &self.kernels {
+                    let new_kernel_gradient = Tensor::new(k.get_shape());
+                    self.kernel_gradients.push(new_kernel_gradient);
+                }
+            }
+        }
+    }
     pub fn new(
         kernel_shape: TensorShape,
         input_shape: TensorShape,
@@ -47,6 +65,7 @@ impl ConvolutionalLayer {
     pub fn empty() -> Self {
         let cl = ConvolutionalLayer {
             kernels: vec![],
+            kernel_gradients: vec![],
             stride: 1,
             input_shape: TensorShape {
                 di: 1,
@@ -59,6 +78,7 @@ impl ConvolutionalLayer {
                 dk: 1,
             },
             name: String::from("Empty convolutional layer"),
+            run_state: NetworkRunState::Inference,
         };
         return cl;
     }
@@ -155,6 +175,15 @@ impl Layer for ConvolutionalLayer {
         }
         return Ok(());
     }
+    fn backward(
+        self: &mut Self,
+        _input: &Tensor,
+        _output: &Tensor,
+        _incoming_gradient: &Tensor,
+        _outgoing_gradient: &mut Tensor,
+    ) -> Result<(), &'static str> {
+        return Ok(());
+    }
     fn get_output_shape(self: &Self) -> TensorShape {
         return self.output_shape.clone();
     }
@@ -165,6 +194,25 @@ impl Layer for ConvolutionalLayer {
 
     fn get_name(self: &Self) -> String {
         return self.name.clone();
+    }
+    fn get_run_mode(self: &Self) -> NetworkRunState {
+        return self.run_state.clone();
+    }
+
+    fn clear_gradients(self: &mut Self) {
+        // Fill up all
+        for v in &mut self.kernel_gradients {
+            v.fill_with_value(0.0);
+        }
+    }
+
+    fn switch_to_inference(self: &mut Self) {
+        self.run_state = NetworkRunState::Inference;
+        self.update_gradient_and_intermediate_tensors();
+    }
+    fn switch_to_learning(self: &mut Self) {
+        self.run_state = NetworkRunState::Training;
+        self.update_gradient_and_intermediate_tensors();
     }
 
     fn get_serialized(self: &Self) -> SerializedLayer {
