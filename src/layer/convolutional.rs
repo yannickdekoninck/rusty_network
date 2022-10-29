@@ -177,7 +177,7 @@ impl Layer for ConvolutionalLayer {
                 self.stride,
                 output,
                 i,
-            );
+            )?;
         }
         return Ok(());
     }

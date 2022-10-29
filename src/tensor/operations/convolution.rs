@@ -49,54 +49,57 @@ pub fn convolution(
     stride: u32,
     result: &mut Tensor,
     result_channel: u32,
-) {
-    if check_convolution_dimensions(
+) -> Result<(), &'static str> {
+    if !check_convolution_dimensions(
         &image.get_shape(),
         &kernel.get_shape(),
         stride,
         &result.get_shape(),
         result_channel,
     ) {
-        // All clear to convolute!
+        return Err("Convolution dimensions do not match");
+    }
 
-        let result_shape = result.shape.get();
-        let kernel_shape = kernel.shape.get();
+    // All clear to convolute!
 
-        // Main loop over image
-        for j in 0..result_shape.1 {
-            for i in 0..result_shape.0 {
-                let mut convolution_result: f32 = 0.0;
-                let image_start_i = i * stride;
-                let image_start_j = j * stride;
+    let result_shape = result.shape.get();
+    let kernel_shape = kernel.shape.get();
 
-                // Loop over kernel dimensions and multiply - add
-                for kk in 0..kernel_shape.2 {
-                    for kj in 0..kernel_shape.1 {
-                        for ki in 0..kernel_shape.0 {
-                            let kernel_id = kernel.get_data_index(&TensorIndex {
-                                i: ki,
-                                j: kj,
-                                k: kk,
-                            }) as usize;
-                            let image_id = image.get_data_index(&TensorIndex {
-                                i: image_start_i + ki,
-                                j: image_start_j + kj,
-                                k: kk,
-                            }) as usize;
-                            convolution_result += image.data[image_id] * kernel.data[kernel_id];
-                        }
+    // Main loop over image
+    for j in 0..result_shape.1 {
+        for i in 0..result_shape.0 {
+            let mut convolution_result: f32 = 0.0;
+            let image_start_i = i * stride;
+            let image_start_j = j * stride;
+
+            // Loop over kernel dimensions and multiply - add
+            for kk in 0..kernel_shape.2 {
+                for kj in 0..kernel_shape.1 {
+                    for ki in 0..kernel_shape.0 {
+                        let kernel_id = kernel.get_data_index(&TensorIndex {
+                            i: ki,
+                            j: kj,
+                            k: kk,
+                        }) as usize;
+                        let image_id = image.get_data_index(&TensorIndex {
+                            i: image_start_i + ki,
+                            j: image_start_j + kj,
+                            k: kk,
+                        }) as usize;
+                        convolution_result += image.data[image_id] * kernel.data[kernel_id];
                     }
                 }
-                let result_id = result.get_data_index(&TensorIndex {
-                    i: i,
-                    j: j,
-                    k: result_channel,
-                }) as usize;
-
-                result.data[result_id] = convolution_result;
             }
+            let result_id = result.get_data_index(&TensorIndex {
+                i: i,
+                j: j,
+                k: result_channel,
+            }) as usize;
+
+            result.data[result_id] = convolution_result;
         }
     }
+    return Ok(());
 }
 
 #[cfg(test)]
@@ -128,13 +131,14 @@ mod test {
             shape: shape_result,
             data: vec![3.0, 2.0, 0.0, 2.5],
         };
-        convolution(
+        assert!(convolution(
             &tensor_image,
             &tensor_kernel,
             stride,
             &mut tensor_result,
             result_channel,
-        );
+        )
+        .is_ok());
         assert_eq!(tensor_result, tensor_expected_result);
     }
 
