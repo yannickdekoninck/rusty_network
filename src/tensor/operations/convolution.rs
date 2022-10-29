@@ -62,20 +62,20 @@ pub fn convolution(
 
     // All clear to convolute!
 
-    let result_shape = result.shape.get();
-    let kernel_shape = kernel.shape.get();
+    let result_shape = result.get_shape();
+    let kernel_shape = kernel.get_shape();
 
     // Main loop over image
-    for j in 0..result_shape.1 {
-        for i in 0..result_shape.0 {
+    for j in 0..result_shape.dj {
+        for i in 0..result_shape.di {
             let mut convolution_result: f32 = 0.0;
             let image_start_i = i * stride;
             let image_start_j = j * stride;
 
             // Loop over kernel dimensions and multiply - add
-            for kk in 0..kernel_shape.2 {
-                for kj in 0..kernel_shape.1 {
-                    for ki in 0..kernel_shape.0 {
+            for kk in 0..kernel_shape.dk {
+                for kj in 0..kernel_shape.dj {
+                    for ki in 0..kernel_shape.di {
                         let kernel_id = kernel.get_data_index(&TensorIndex {
                             i: ki,
                             j: kj,
@@ -99,6 +99,29 @@ pub fn convolution(
             result.data[result_id] = convolution_result;
         }
     }
+    return Ok(());
+}
+
+pub fn convolution_backprop_outgoing_gradient(
+    incoming_gradients: &Tensor,
+    kernels: &Vec<Tensor>,
+    stride: u32,
+    result: &mut Tensor,
+) -> Result<(), &'static str> {
+    // Check input shapes
+
+    return Ok(());
+}
+
+pub fn convolution_backprop_kernel(
+    incoming_gradients: &Tensor,
+    image: &Tensor,
+    stride: u32,
+    result_channel: u32,
+    result: &mut Tensor,
+) -> Result<(), &'static str> {
+    // Check input shapes
+
     return Ok(());
 }
 
