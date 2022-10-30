@@ -117,11 +117,55 @@ pub fn convolution_backprop_kernel(
     incoming_gradients: &Tensor,
     image: &Tensor,
     stride: u32,
-    result_channel: u32,
-    result: &mut Tensor,
+    kernel_channel: u32,
+    kernel_gradient: &mut Tensor,
 ) -> Result<(), &'static str> {
     // Check input shapes
+    if !check_convolution_dimensions(
+        &image.get_shape(),
+        &kernel_gradient.get_shape(),
+        stride,
+        &incoming_gradients.get_shape(),
+        kernel_channel,
+    ) {
+        return Err("Convolution dimensions do not match");
+    }
 
+    // All clear to calculate!
+
+    let result_shape = incoming_gradients.get_shape();
+    let kernel_shape = kernel_gradient.get_shape();
+
+    // Main loop over image
+    for n in 0..kernel_shape.dk {
+        for m in 0..kernel_shape.dj {
+            for l in 0..kernel_shape.di {
+                let mut convolution_result: f32 = 0.0;
+
+                // Loop over incoming gradient dimensions and multiply - add
+                for k in 0..result_shape.dk {
+                    for j in 0..result_shape.dj {
+                        for i in 0..result_shape.di {
+                            let incoming_gradient_id = incoming_gradients
+                                .get_data_index(&TensorIndex { i: i, j: j, k: k })
+                                as usize;
+                            let image_id = image.get_data_index(&TensorIndex {
+                                i: l + i * stride,
+                                j: m + j * stride,
+                                k: n,
+                            }) as usize;
+                            convolution_result += image.data[image_id]
+                                * incoming_gradients.data[incoming_gradient_id];
+                        }
+                    }
+                }
+                let kernel_gradient_id =
+                    kernel_gradient.get_data_index(&TensorIndex { i: l, j: m, k: n }) as usize;
+
+                kernel_gradient.data[kernel_gradient_id] = convolution_result;
+            }
+        }
+    }
     return Ok(());
 }
 
@@ -136,13 +180,12 @@ mod test {
         let shape_result = TensorShape::new(2, 2, 1);
         let stride: u32 = 1;
         let result_channel: u32 = 0;
-        let tensor_image = Tensor {
-            strides: TensorStride::new_from_shape(&shape_input),
-            shape: shape_input,
-            data: vec![
+        let mut tensor_image = Tensor::new(shape_input);
+        assert!(tensor_image
+            .fill_with_vec(vec![
                 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 0.5,
-            ],
-        };
+            ])
+            .is_ok());
         let tensor_kernel = Tensor {
             strides: TensorStride::new_from_shape(&shape_kernel),
             shape: shape_kernel,
@@ -163,6 +206,39 @@ mod test {
         )
         .is_ok());
         assert_eq!(tensor_result, tensor_expected_result);
+    }
+
+    #[test]
+    fn test_convolution_backprop_kernel() {
+        let shape_input = TensorShape::new(4, 4, 1);
+        let shape_kernel = TensorShape::new(2, 2, 1);
+        let shape_result = TensorShape::new(2, 2, 1);
+        let stride: u32 = 2;
+        let result_channel: u32 = 0;
+        let mut tensor_image = Tensor::new(shape_input);
+        assert!(tensor_image
+            .fill_with_vec(vec![
+                1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 0.5,
+            ])
+            .is_ok());
+        let mut tensor_incoming_gradient = Tensor::new(shape_result);
+        tensor_incoming_gradient
+            .fill_with_vec(vec![1.0, 2.0, 2.0, 0.0])
+            .expect("Could not fill incoming gradient tensor");
+        let mut tensor_kernel_gradient = Tensor::new(shape_kernel);
+        let mut tensor_expected_kernel_gradient = Tensor::new(shape_kernel);
+        tensor_expected_kernel_gradient
+            .fill_with_vec(vec![1.0, 1.0, 1.0, 1.0])
+            .expect("Could not fill incoming gradient tensor");
+        assert!(convolution_backprop_kernel(
+            &tensor_incoming_gradient,
+            &tensor_image,
+            stride,
+            result_channel,
+            &mut tensor_kernel_gradient,
+        )
+        .is_ok());
+        assert_eq!(tensor_kernel_gradient, tensor_expected_kernel_gradient);
     }
 
     #[test]
