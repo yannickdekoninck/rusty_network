@@ -223,12 +223,12 @@ mod test {
             .is_ok());
         let mut tensor_incoming_gradient = Tensor::new(shape_result);
         tensor_incoming_gradient
-            .fill_with_vec(vec![1.0, 2.0, 2.0, 0.0])
+            .fill_with_vec(vec![1.0, 2.0, 0.0, 2.0])
             .expect("Could not fill incoming gradient tensor");
         let mut tensor_kernel_gradient = Tensor::new(shape_kernel);
         let mut tensor_expected_kernel_gradient = Tensor::new(shape_kernel);
         tensor_expected_kernel_gradient
-            .fill_with_vec(vec![1.0, 1.0, 1.0, 1.0])
+            .fill_with_vec(vec![3.0, 2.0, 1.0, 2.0])
             .expect("Could not fill incoming gradient tensor");
         assert!(convolution_backprop_kernel(
             &tensor_incoming_gradient,
