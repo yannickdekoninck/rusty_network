@@ -99,6 +99,76 @@ pub fn convolution(
     }
     return Ok(());
 }
+pub fn convolution_bias_relu(
+    image: &Tensor,
+    kernel: &Tensor,
+    bias: &Tensor,
+    stride: u32,
+    result: &mut Tensor,
+    result_channel: u32,
+) -> Result<(), &'static str> {
+    check_convolution_dimensions(
+        &image.get_shape(),
+        &kernel.get_shape(),
+        stride,
+        &result.get_shape(),
+        result_channel,
+    )?;
+
+    let bias_shape = bias.get_shape();
+
+    if bias_shape.di > 1 || bias_shape.dj > 1 || bias_shape.dk > 1 {
+        return Err("bias should be a 1x1x1 tensor");
+    }
+
+    let bias_value = bias.get_item(&TensorIndex { i: 0, j: 0, k: 0 });
+
+    // All clear to convolute!
+
+    let result_shape = result.get_shape();
+    let kernel_shape = kernel.get_shape();
+
+    // Main loop over image
+    for j in 0..result_shape.dj {
+        for i in 0..result_shape.di {
+            let mut convolution_result: f32 = 0.0;
+            let image_start_i = i * stride;
+            let image_start_j = j * stride;
+
+            // Loop over kernel dimensions and multiply - add
+            for kk in 0..kernel_shape.dk {
+                for kj in 0..kernel_shape.dj {
+                    for ki in 0..kernel_shape.di {
+                        let kernel_id = kernel.get_data_index(&TensorIndex {
+                            i: ki,
+                            j: kj,
+                            k: kk,
+                        }) as usize;
+                        let image_id = image.get_data_index(&TensorIndex {
+                            i: image_start_i + ki,
+                            j: image_start_j + kj,
+                            k: kk,
+                        }) as usize;
+                        convolution_result += image.data[image_id] * kernel.data[kernel_id];
+                    }
+                }
+            }
+            let result_id = result.get_data_index(&TensorIndex {
+                i: i,
+                j: j,
+                k: result_channel,
+            }) as usize;
+
+            // Add bias value
+            convolution_result += bias_value;
+            // cheap relu
+            convolution_result = convolution_result.max(0.0);
+
+            result.data[result_id] = convolution_result;
+        }
+    }
+    return Ok(());
+}
 
 pub fn convolution_backprop_outgoing_gradient(
     incoming_gradients: &Tensor,
@@ -256,6 +326,43 @@ mod test {
         assert!(convolution(
             &tensor_image,
             &tensor_kernel,
+            stride,
+            &mut tensor_result,
+            result_channel,
+        )
+        .is_ok());
+        assert_eq!(tensor_result, tensor_expected_result);
+    }
+    #[test]
+    fn test_convolution_bias_relu() {
+        let shape_input = TensorShape::new(4, 4, 1);
+        let shape_kernel = TensorShape::new(3, 3, 1);
+        let shape_result = TensorShape::new(2, 2, 1);
+        let stride: u32 = 1;
+        let result_channel: u32 = 0;
+        let mut tensor_image = Tensor::new(shape_input);
+        assert!(tensor_image
+            .fill_with_vec(vec![
+                1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 0.5,
+            ])
+            .is_ok());
+        let tensor_kernel = Tensor {
+            strides: TensorStride::new_from_shape(&shape_kernel),
+            shape: shape_kernel,
+            data: vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        };
+        let mut tensor_bias = Tensor::new(TensorShape::new_1d(1));
+        tensor_bias.fill_with_value(-2.1);
+        let mut tensor_result = Tensor::new(shape_result);
+        let tensor_expected_result = Tensor {
+            strides: TensorStride::new_from_shape(&shape_result),
+            shape: shape_result,
+            data: vec![3.0 - 2.1, 0.0, 0.0, 2.5 - 2.1],
+        };
+        assert!(convolution_bias_relu(
+            &tensor_image,
+            &tensor_kernel,
+            &tensor_bias,
             stride,
             &mut tensor_result,
             result_channel,
