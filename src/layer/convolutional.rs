@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub enum ConvolutionalSerialKeys {
     Kernels,
+    Biases,
     InputShape,
     Stride,
     Name,
@@ -16,7 +17,9 @@ pub enum ConvolutionalSerialKeys {
 
 pub struct ConvolutionalLayer {
     kernels: Vec<Tensor>,
+    biases: Vec<f32>,
     kernel_gradients: Vec<Tensor>,
+    bias_gradients: Vec<f32>,
     stride: u32,
     input_shape: TensorShape,
     output_shape: TensorShape,
@@ -30,6 +33,7 @@ impl ConvolutionalLayer {
             NetworkRunState::Inference => {
                 // No gradients required
                 self.kernel_gradients = vec![];
+                self.bias_gradients = vec![];
             }
             NetworkRunState::Training => {
                 // Populate the kernel gradients vector
@@ -38,6 +42,7 @@ impl ConvolutionalLayer {
                     let new_kernel_gradient = Tensor::new(k.get_shape());
                     self.kernel_gradients.push(new_kernel_gradient);
                 }
+                self.bias_gradients = vec![0.0; self.kernels.len()];
             }
         }
     }
@@ -53,8 +58,9 @@ impl ConvolutionalLayer {
 
         // Fill up layer with data
         let kernels = vec![Tensor::new(kernel_shape); output_depth as usize];
+        let biases = vec![0.0; output_depth as usize];
 
-        match new_layer.fill_from_state(kernels, input_shape, stride, name) {
+        match new_layer.fill_from_state(kernels, biases, input_shape, stride, name) {
             Ok(_) => {
                 return Ok(new_layer);
             }
@@ -65,7 +71,9 @@ impl ConvolutionalLayer {
     pub fn empty() -> Self {
         let cl = ConvolutionalLayer {
             kernels: vec![],
+            biases: vec![],
             kernel_gradients: vec![],
+            bias_gradients: vec![],
             stride: 1,
             input_shape: TensorShape {
                 di: 1,
@@ -86,6 +94,7 @@ impl ConvolutionalLayer {
     pub fn fill_from_state(
         self: &mut Self,
         kernels: Vec<Tensor>,
+        biases: Vec<f32>,
         input_shape: TensorShape,
         stride: u32,
         name: &String,
@@ -119,6 +128,7 @@ impl ConvolutionalLayer {
 
         self.name = name.clone();
         self.kernels = kernels;
+        self.biases = biases;
         self.input_shape = input_shape;
         self.output_shape = output_shape;
         self.stride = stride;
@@ -135,6 +145,9 @@ impl ConvolutionalLayer {
         if !data.contains_key(&ConvolutionalSerialKeys::Kernels) {
             return Err("Data does not contain --kernels-- key");
         }
+        if !data.contains_key(&ConvolutionalSerialKeys::Biases) {
+            return Err("Data does not contain --biases-- key");
+        }
         if !data.contains_key(&ConvolutionalSerialKeys::InputShape) {
             return Err("Data does not contain --input shape-- key");
         }
@@ -142,16 +155,24 @@ impl ConvolutionalLayer {
             return Err("Data does not contain --stride-- key");
         }
 
-        let mask_shape_data = data
+        let kernels_data = data
             .get(&ConvolutionalSerialKeys::Kernels)
-            .expect("Cannot access mask shape data");
+            .expect("Cannot access kernels data");
         let kernels: Vec<Tensor> =
-            bincode::deserialize(mask_shape_data).expect("Cannot deserialize kernels data");
+            bincode::deserialize(kernels_data).expect("Cannot deserialize kernels data");
+
+        let biases_data = data
+            .get(&ConvolutionalSerialKeys::Biases)
+            .expect("Cannot access biases data");
+        let biases: Vec<f32> =
+            bincode::deserialize(biases_data).expect("Cannot deserialize biases data");
+
         let input_shape_data = data
             .get(&ConvolutionalSerialKeys::InputShape)
             .expect("Cannot access input shape data");
         let input_shape: TensorShape =
             bincode::deserialize(input_shape_data).expect("Cannot deserialize input shape data");
+
         let stride_data = data
             .get(&ConvolutionalSerialKeys::Stride)
             .expect("Cannot access stride data");
@@ -163,7 +184,7 @@ impl ConvolutionalLayer {
             .expect("Cannot access name data");
         let name: String = bincode::deserialize(name_data).expect("Cannot deserialize name data");
 
-        return self.fill_from_state(kernels, input_shape, stride, &name);
+        return self.fill_from_state(kernels, biases, input_shape, stride, &name);
     }
 }
 
@@ -226,11 +247,13 @@ impl Layer for ConvolutionalLayer {
         let mut serial_data: HashMap<ConvolutionalSerialKeys, Vec<u8>> = HashMap::new();
         // Serialize elements that need to be serialized
         let serial_kernels = bincode::serialize(&self.kernels).unwrap();
+        let serial_biases = bincode::serialize(&self.biases).unwrap();
         let serial_input_shape = bincode::serialize(&self.input_shape).unwrap();
         let serial_stride = bincode::serialize(&self.stride).unwrap();
         let serial_name = bincode::serialize(&self.name).unwrap();
         // Add to hashmap
         serial_data.insert(ConvolutionalSerialKeys::Kernels, serial_kernels);
+        serial_data.insert(ConvolutionalSerialKeys::Biases, serial_biases);
         serial_data.insert(ConvolutionalSerialKeys::InputShape, serial_input_shape);
         serial_data.insert(ConvolutionalSerialKeys::Stride, serial_stride);
         serial_data.insert(ConvolutionalSerialKeys::Name, serial_name);
@@ -285,6 +308,7 @@ mod test {
             .is_ok());
 
         assert_eq!(new_layer.kernels, conv_layer.kernels);
+        assert_eq!(new_layer.biases, conv_layer.biases);
         assert_eq!(new_layer.input_shape, conv_layer.input_shape);
         assert_eq!(new_layer.output_shape, conv_layer.output_shape);
         assert_eq!(new_layer.stride, conv_layer.stride);
