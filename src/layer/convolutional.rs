@@ -21,6 +21,7 @@ pub struct ConvolutionalLayer {
     kernel_gradients: Vec<Tensor>,
     bias_gradients: Vec<Tensor>,
     stride: u32,
+    relu_mask: Tensor,
     input_shape: TensorShape,
     output_shape: TensorShape,
     name: String,
@@ -34,6 +35,7 @@ impl ConvolutionalLayer {
                 // No gradients required
                 self.kernel_gradients = vec![];
                 self.bias_gradients = vec![];
+                self.relu_mask = Tensor::empty();
             }
             NetworkRunState::Training => {
                 // Populate the kernel gradients vector
@@ -43,6 +45,7 @@ impl ConvolutionalLayer {
                     self.kernel_gradients.push(new_kernel_gradient);
                 }
                 self.bias_gradients = vec![Tensor::new(TensorShape::new_1d(1)); self.kernels.len()];
+                self.relu_mask = Tensor::new(self.output_shape);
             }
         }
     }
@@ -74,6 +77,7 @@ impl ConvolutionalLayer {
             biases: vec![],
             kernel_gradients: vec![],
             bias_gradients: vec![],
+            relu_mask: Tensor::empty(),
             stride: 1,
             input_shape: TensorShape {
                 di: 1,
@@ -216,6 +220,7 @@ impl Layer for ConvolutionalLayer {
                         i,
                     )?;
                 }
+                tensor::Tensor::relu_self_and_store_mask(output, &mut self.relu_mask)?;
             }
         }
         // Convolution for every output channel
