@@ -43,9 +43,10 @@ pub fn check_convolution_dimensions(
     return Ok(());
 }
 
-pub fn convolution(
+pub fn convolution_bias(
     image: &Tensor,
     kernel: &Tensor,
+    bias: &Tensor,
     stride: u32,
     result: &mut Tensor,
     result_channel: u32,
@@ -58,6 +59,13 @@ pub fn convolution(
         result_channel,
     )?;
 
+    let bias_shape = bias.get_shape();
+
+    if bias_shape.di > 1 || bias_shape.dj > 1 || bias_shape.dk > 1 {
+        return Err("bias should be a 1x1x1 tensor");
+    }
+
+    let bias_value = bias.get_item(&TensorIndex { i: 0, j: 0, k: 0 });
     // All clear to convolute!
 
     let result_shape = result.get_shape();
@@ -69,7 +77,6 @@ pub fn convolution(
             let mut convolution_result: f32 = 0.0;
             let image_start_i = i * stride;
             let image_start_j = j * stride;
-
             // Loop over kernel dimensions and multiply - add
             for kk in 0..kernel_shape.dk {
                 for kj in 0..kernel_shape.dj {
@@ -94,6 +101,7 @@ pub fn convolution(
                 k: result_channel,
             }) as usize;
 
+            convolution_result += bias_value;
             result.data[result_id] = convolution_result;
         }
     }
@@ -302,6 +310,7 @@ mod test {
     #[test]
     fn test_convolution() {
         let shape_input = TensorShape::new(4, 4, 1);
+        let shape_bias = TensorShape::new(1, 1, 1);
         let shape_kernel = TensorShape::new(3, 3, 1);
         let shape_result = TensorShape::new(2, 2, 1);
         let stride: u32 = 1;
@@ -317,15 +326,21 @@ mod test {
             shape: shape_kernel,
             data: vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
         };
+        let tensor_bias = Tensor {
+            strides: TensorStride::new_from_shape(&shape_bias),
+            shape: shape_bias,
+            data: vec![1.0],
+        };
         let mut tensor_result = Tensor::new(shape_result);
         let tensor_expected_result = Tensor {
             strides: TensorStride::new_from_shape(&shape_result),
             shape: shape_result,
-            data: vec![3.0, 2.0, 0.0, 2.5],
+            data: vec![4.0, 3.0, 1.0, 3.5],
         };
-        assert!(convolution(
+        assert!(convolution_bias(
             &tensor_image,
             &tensor_kernel,
+            &tensor_bias,
             stride,
             &mut tensor_result,
             result_channel,

@@ -190,17 +190,35 @@ impl ConvolutionalLayer {
 
 impl Layer for ConvolutionalLayer {
     fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
-        // Convolution for every output channel
-        for i in 0..self.output_shape.dk {
-            tensor::operations::convolution::convolution_bias_relu(
-                input,
-                &self.kernels[i as usize],
-                &self.biases[i as usize],
-                self.stride,
-                output,
-                i,
-            )?;
+        match self.run_state {
+            NetworkRunState::Inference => {
+                // Do the fast single function version
+                for i in 0..self.output_shape.dk {
+                    tensor::operations::convolution::convolution_bias_relu(
+                        input,
+                        &self.kernels[i as usize],
+                        &self.biases[i as usize],
+                        self.stride,
+                        output,
+                        i,
+                    )?;
+                }
+            }
+            NetworkRunState::Training => {
+                // Do the stepwise version so we can keep track of the relu mask
+                for i in 0..self.output_shape.dk {
+                    tensor::operations::convolution::convolution_bias(
+                        input,
+                        &self.kernels[i as usize],
+                        &self.biases[i as usize],
+                        self.stride,
+                        output,
+                        i,
+                    )?;
+                }
+            }
         }
+        // Convolution for every output channel
         return Ok(());
     }
     fn backward(
