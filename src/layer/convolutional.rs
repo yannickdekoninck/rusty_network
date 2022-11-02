@@ -17,9 +17,9 @@ pub enum ConvolutionalSerialKeys {
 
 pub struct ConvolutionalLayer {
     kernels: Vec<Tensor>,
-    biases: Vec<f32>,
+    biases: Vec<Tensor>,
     kernel_gradients: Vec<Tensor>,
-    bias_gradients: Vec<f32>,
+    bias_gradients: Vec<Tensor>,
     stride: u32,
     input_shape: TensorShape,
     output_shape: TensorShape,
@@ -42,7 +42,7 @@ impl ConvolutionalLayer {
                     let new_kernel_gradient = Tensor::new(k.get_shape());
                     self.kernel_gradients.push(new_kernel_gradient);
                 }
-                self.bias_gradients = vec![0.0; self.kernels.len()];
+                self.bias_gradients = vec![Tensor::new(TensorShape::new_1d(1)); self.kernels.len()];
             }
         }
     }
@@ -58,7 +58,7 @@ impl ConvolutionalLayer {
 
         // Fill up layer with data
         let kernels = vec![Tensor::new(kernel_shape); output_depth as usize];
-        let biases = vec![0.0; output_depth as usize];
+        let biases = vec![Tensor::new(TensorShape::new_1d(1)); output_depth as usize];
 
         match new_layer.fill_from_state(kernels, biases, input_shape, stride, name) {
             Ok(_) => {
@@ -94,7 +94,7 @@ impl ConvolutionalLayer {
     pub fn fill_from_state(
         self: &mut Self,
         kernels: Vec<Tensor>,
-        biases: Vec<f32>,
+        biases: Vec<Tensor>,
         input_shape: TensorShape,
         stride: u32,
         name: &String,
@@ -164,7 +164,7 @@ impl ConvolutionalLayer {
         let biases_data = data
             .get(&ConvolutionalSerialKeys::Biases)
             .expect("Cannot access biases data");
-        let biases: Vec<f32> =
+        let biases: Vec<Tensor> =
             bincode::deserialize(biases_data).expect("Cannot deserialize biases data");
 
         let input_shape_data = data
@@ -192,9 +192,10 @@ impl Layer for ConvolutionalLayer {
     fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
         // Convolution for every output channel
         for i in 0..self.output_shape.dk {
-            tensor::operations::convolution::convolution(
+            tensor::operations::convolution::convolution_bias_relu(
                 input,
                 &self.kernels[i as usize],
+                &self.biases[i as usize],
                 self.stride,
                 output,
                 i,
