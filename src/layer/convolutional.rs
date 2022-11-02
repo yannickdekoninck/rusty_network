@@ -228,11 +228,36 @@ impl Layer for ConvolutionalLayer {
     }
     fn backward(
         self: &mut Self,
-        _input: &Tensor,
+        input: &Tensor,
         _output: &Tensor,
-        _incoming_gradient: &Tensor,
-        _outgoing_gradient: &mut Tensor,
+        incoming_gradient: &Tensor,
+        outgoing_gradient: &mut Tensor,
     ) -> Result<(), &'static str> {
+        // Relu backprop
+        // This repurposes the relu mask
+        tensor::Tensor::multiply_elementwise_self(&mut self.relu_mask, incoming_gradient);
+
+        // Bias gradient
+
+        // kernel gradients
+        for i in 0..self.kernels.len() {
+            tensor::operations::convolution::convolution_backprop_kernel(
+                incoming_gradient,
+                input,
+                self.stride,
+                i as u32,
+                &mut self.kernel_gradients[i],
+            )?;
+        }
+
+        // Outgoing gradient
+        tensor::operations::convolution::convolution_backprop_outgoing_gradient(
+            incoming_gradient,
+            &self.kernels,
+            self.stride,
+            outgoing_gradient,
+        )?;
+
         return Ok(());
     }
     fn get_output_shape(self: &Self) -> TensorShape {
@@ -337,5 +362,60 @@ mod test {
         assert_eq!(new_layer.output_shape, conv_layer.output_shape);
         assert_eq!(new_layer.stride, conv_layer.stride);
         assert_eq!(new_layer.name, conv_layer.name);
+    }
+
+    #[test]
+    fn test_backprop() {
+        // Shapes
+        let shape_input = TensorShape::new(3, 3, 1);
+        let shape_kernel = TensorShape::new(2, 2, 1);
+        let shape_result = TensorShape::new(2, 2, 2);
+        let stride: u32 = 1;
+        let mut tensor_image = Tensor::new(shape_input);
+        assert!(tensor_image
+            .fill_with_vec(vec![1.0, 1.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 1.0])
+            .is_ok());
+
+        let mut kernel1 = Tensor::new(shape_kernel);
+        assert!(kernel1.fill_with_vec(vec![1.0, 0.0, 0.0, 1.0]).is_ok());
+        let mut kernel2 = Tensor::new(shape_kernel);
+        assert!(kernel2.fill_with_vec(vec![1.0, 1.0, 0.0, 0.0]).is_ok());
+
+        let kernels = vec![kernel1, kernel2];
+
+        let mut bias1 = Tensor::new(TensorShape::new_1d(1));
+        bias1.fill_with_value(0.0);
+        let mut bias2 = Tensor::new(TensorShape::new_1d(1));
+        bias2.fill_with_value(-1.5);
+
+        let biases = vec![bias1, bias2];
+
+        let mut conv_layer = ConvolutionalLayer::empty();
+        assert!(conv_layer
+            .fill_from_state(
+                kernels,
+                biases,
+                shape_input,
+                stride,
+                &String::from("Convolutional layer"),
+            )
+            .is_ok());
+
+        let mut result = Tensor::new(shape_result);
+        let mut expected_result = Tensor::new(shape_result);
+        assert!(expected_result
+            .fill_with_vec(vec![2.0, 1.5, 0.0, 2.0, 0.5, 0.0, 0.0, 0.0])
+            .is_ok());
+
+        // Forward in inference mode
+        assert!(conv_layer.forward(&tensor_image, &mut result).is_ok());
+        assert_eq!(result, expected_result);
+
+        // Switch to training mode
+        conv_layer.switch_to_learning();
+
+        // Forward in training mode
+        assert!(conv_layer.forward(&tensor_image, &mut result).is_ok());
+        assert_eq!(result, expected_result);
     }
 }
