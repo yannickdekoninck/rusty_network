@@ -61,7 +61,7 @@ pub trait Layer {
     ) -> Result<(), &'static str>;
     fn apply_gradients(self: &mut Self) {}
     fn clear_gradients(self: &mut Self);
-    fn switch_to_learning(self: &mut Self);
+    fn switch_to_training(self: &mut Self);
     fn switch_to_inference(self: &mut Self);
     fn get_run_mode(self: &Self) -> NetworkRunState;
     fn get_input_shape(self: &Self) -> TensorShape;

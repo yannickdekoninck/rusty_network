@@ -288,7 +288,7 @@ impl Layer for ConvolutionalLayer {
         self.run_state = NetworkRunState::Inference;
         self.update_gradient_and_intermediate_tensors();
     }
-    fn switch_to_learning(self: &mut Self) {
+    fn switch_to_training(self: &mut Self) {
         self.run_state = NetworkRunState::Training;
         self.update_gradient_and_intermediate_tensors();
     }
@@ -414,7 +414,7 @@ mod test {
         assert_eq!(result, expected_result);
 
         // Switch to training mode
-        conv_layer.switch_to_learning();
+        conv_layer.switch_to_training();
 
         // Forward in training mode
         assert!(conv_layer.forward(&tensor_image, &mut result).is_ok());

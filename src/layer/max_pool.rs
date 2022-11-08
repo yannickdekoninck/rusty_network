@@ -237,7 +237,7 @@ impl Layer for MaxPoolLayer {
         self.update_gradient_and_intermediate_tensors();
     }
 
-    fn switch_to_learning(self: &mut Self) {
+    fn switch_to_training(self: &mut Self) {
         // Update run state
         self.run_state = NetworkRunState::Training;
         // Create tensors with the correct shapes
@@ -348,7 +348,7 @@ mod test {
             )
             .is_ok());
 
-        mpl.switch_to_learning();
+        mpl.switch_to_training();
 
         assert!(mpl.forward(&image, &mut output).is_ok());
 

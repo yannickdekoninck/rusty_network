@@ -109,7 +109,7 @@ impl Network {
                 layer.switch_to_inference();
             }
             NetworkRunState::Training => {
-                layer.switch_to_learning();
+                layer.switch_to_training();
             }
         }
 
@@ -171,10 +171,10 @@ impl Network {
     pub fn get_run_state(self: &Self) -> NetworkRunState {
         return self.run_state.clone();
     }
-    pub fn switch_to_learning(&mut self) {
+    pub fn switch_to_training(&mut self) {
         self.run_state = NetworkRunState::Training;
         for layer in self.layers.iter_mut() {
-            layer.switch_to_learning();
+            layer.switch_to_training();
         }
     }
     pub fn switch_to_inference(&mut self) {
@@ -271,7 +271,7 @@ mod test {
         for lay in network.layers.iter() {
             assert_eq!(lay.get_run_mode(), NetworkRunState::Inference);
         }
-        network.switch_to_learning();
+        network.switch_to_training();
         for lay in network.layers.iter() {
             assert_eq!(lay.get_run_mode(), NetworkRunState::Training);
         }

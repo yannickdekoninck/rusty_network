@@ -228,7 +228,7 @@ impl Layer for FullyConnectedLayer {
         self.update_gradient_and_intermediate_tensors();
     }
 
-    fn switch_to_learning(self: &mut Self) {
+    fn switch_to_training(self: &mut Self) {
         // Update run state
         self.run_state = NetworkRunState::Training;
         // Create tensors with the correct shapes
@@ -356,7 +356,7 @@ mod test {
             .fill_from_state(weights, bias, &String::from("Test layer"))
             .is_ok());
 
-        fcl.switch_to_learning();
+        fcl.switch_to_training();
 
         assert!(fcl.forward(&input, &mut output).is_ok());
 

@@ -187,7 +187,7 @@ impl Layer for SoftmaxLayer {
         self.update_gradient_and_intermediate_tensors();
     }
 
-    fn switch_to_learning(self: &mut Self) {
+    fn switch_to_training(self: &mut Self) {
         self.run_state = NetworkRunState::Training;
         self.update_gradient_and_intermediate_tensors();
     }
@@ -267,7 +267,7 @@ mod test {
             &mut expected_outgoing_gradient,
         );
         let mut sml = SoftmaxLayer::new(input.get_shape(), &String::from("softmax layer")).unwrap();
-        sml.switch_to_learning();
+        sml.switch_to_training();
         assert!(sml.forward(&input, &mut output).is_ok());
         assert_eq!(output, expected_output);
         assert!(sml
