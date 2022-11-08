@@ -11,7 +11,7 @@ use std::error::Error;
 
 // An enum to indicate the state of a network and its layers
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum NetworkRunState {
     Inference,
     Training,
@@ -99,7 +99,21 @@ impl Network {
         return Ok(());
     }
 
-    pub fn add_layer<T: Layer + 'static>(self: &mut Self, layer: T) -> Result<(), &'static str> {
+    pub fn add_layer<T: Layer + 'static>(
+        self: &mut Self,
+        mut layer: T,
+    ) -> Result<(), &'static str> {
+        // Make sure the new layer is in the correct state
+        match self.run_state {
+            NetworkRunState::Inference => {
+                layer.switch_to_inference();
+            }
+            NetworkRunState::Training => {
+                layer.switch_to_learning();
+            }
+        }
+
+        // Check if this is the first layer to be added
         if self.layers.len() == 0 {
             // This is the first layer
             // Copy over the interface shapes of this layer
@@ -156,6 +170,18 @@ impl Network {
 
     pub fn get_run_state(self: &Self) -> NetworkRunState {
         return self.run_state.clone();
+    }
+    pub fn switch_to_learning(&mut self) {
+        self.run_state = NetworkRunState::Training;
+        for layer in self.layers.iter_mut() {
+            layer.switch_to_learning();
+        }
+    }
+    pub fn switch_to_inference(&mut self) {
+        self.run_state = NetworkRunState::Training;
+        for layer in self.layers.iter_mut() {
+            layer.switch_to_inference();
+        }
     }
 
     pub fn infer(self: &mut Self, input: &Tensor) -> Result<(), &'static str> {
@@ -233,6 +259,30 @@ mod test {
         let output_shape = network.get_output_shape();
         assert_eq!(input_shape, expected_input_shape);
         assert_eq!(output_shape, expected_output_shape);
+    }
+
+    #[test]
+    fn test_run_state() {
+        let layer_1 = FullyConnectedLayer::new(3, 8, &String::from("full_layer_1"));
+        let layer_2 = FullyConnectedLayer::new(8, 4, &String::from("full_layer_2"));
+        let mut network = Network::new(NetworkRunState::Inference);
+        assert!(network.add_layer(layer_1).is_ok());
+
+        for lay in network.layers.iter() {
+            assert_eq!(lay.get_run_mode(), NetworkRunState::Inference);
+        }
+        network.switch_to_learning();
+        for lay in network.layers.iter() {
+            assert_eq!(lay.get_run_mode(), NetworkRunState::Training);
+        }
+        assert!(network.add_layer(layer_2).is_ok());
+        for lay in network.layers.iter() {
+            assert_eq!(lay.get_run_mode(), NetworkRunState::Training);
+        }
+        network.switch_to_inference();
+        for lay in network.layers.iter() {
+            assert_eq!(lay.get_run_mode(), NetworkRunState::Inference);
+        }
     }
 
     #[test]
