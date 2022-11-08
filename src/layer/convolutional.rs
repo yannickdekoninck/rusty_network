@@ -239,6 +239,8 @@ impl Layer for ConvolutionalLayer {
 
         // Bias gradient
 
+        // Biases don't affect gradient propagation
+
         // kernel gradients
         for i in 0..self.kernels.len() {
             tensor::operations::convolution::convolution_backprop_kernel(
@@ -417,5 +419,32 @@ mod test {
         // Forward in training mode
         assert!(conv_layer.forward(&tensor_image, &mut result).is_ok());
         assert_eq!(result, expected_result);
+
+        // Incoming gradient
+        let mut incoming_gradient = Tensor::new(result.get_shape());
+        assert!(incoming_gradient
+            .fill_with_vec(vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0])
+            .is_ok());
+
+        // Outgoign gradient
+        let mut outgoing_gradient = Tensor::new(tensor_image.get_shape());
+        let expected_outgoing_gradient = Tensor::new(tensor_image.get_shape());
+
+        assert!(conv_layer
+            .backward(
+                &tensor_image,
+                &result,
+                &incoming_gradient,
+                &mut outgoing_gradient
+            )
+            .is_ok());
+
+        // The outgoing gradient should not be empty again
+        assert_ne!(outgoing_gradient, expected_outgoing_gradient);
+
+        // TODO: Check the actual outgoign gradient values
+        // In principle these operations are already checked in the
+        // Tensor::operations::convolution tests
+        // But should be good to test them here too
     }
 }
