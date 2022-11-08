@@ -126,6 +126,13 @@ impl Network {
                 .push(Tensor::new(self.input_shape.clone()));
             self.intermediate_states
                 .push(Tensor::new(self.output_shape.clone()));
+            if self.run_state == NetworkRunState::Training {
+                // Adding input and outputs as new intermediate states
+                self.intermediate_gradients
+                    .push(Tensor::new(self.input_shape.clone()));
+                self.intermediate_gradients
+                    .push(Tensor::new(self.output_shape.clone()));
+            }
             return Ok(());
         }
 
@@ -142,6 +149,11 @@ impl Network {
         // Add a new intermediate state
         self.intermediate_states
             .push(Tensor::new(self.output_shape.clone()));
+
+        if self.run_state == NetworkRunState::Training {
+            self.intermediate_gradients
+                .push(Tensor::new(self.output_shape.clone()));
+        }
 
         return Ok(());
     }
@@ -176,12 +188,19 @@ impl Network {
         for layer in self.layers.iter_mut() {
             layer.switch_to_training();
         }
+        self.intermediate_gradients = vec![];
+        for int_state in self.intermediate_states.iter() {
+            self.intermediate_gradients
+                .push(Tensor::new(int_state.get_shape()));
+        }
     }
     pub fn switch_to_inference(&mut self) {
         self.run_state = NetworkRunState::Training;
         for layer in self.layers.iter_mut() {
             layer.switch_to_inference();
         }
+        // No need to keep track of intermediate gradients
+        self.intermediate_gradients = vec![];
     }
 
     pub fn infer(self: &mut Self, input: &Tensor) -> Result<(), &'static str> {
@@ -214,6 +233,50 @@ impl Network {
 
             // Propagate through network
             layer.forward(input_tensor, output_tensor)?;
+        }
+
+        return Ok(());
+    }
+
+    pub fn backward(self: &mut Self, incoming_loss_gradient: &Tensor) -> Result<(), &'static str> {
+        // Input shape check
+        if incoming_loss_gradient.get_shape() != self.output_shape {
+            return Err("Incoming loss gradient shape not as expected");
+        }
+
+        // Check there are layers
+        if self.layers.len() < 1 {
+            return Err("Network does not contain any layers");
+        }
+
+        // Check we are in the correct mode
+        if self.run_state != NetworkRunState::Training {
+            return Err("Can only propagate backwards in training mode");
+        }
+
+        let number_of_layers = self.layers.len();
+        // Copy the incoming loss gradient into the intermediate states vector
+        self.intermediate_gradients[number_of_layers] = incoming_loss_gradient.clone();
+
+        // Create a slice to index into
+        let intermediate_gradients_slice = &mut self.intermediate_gradients[..];
+
+        for i in (0..self.layers.len()).rev() {
+            // Split up the slice into two mutable slices
+            // This is required to be able to both borrow the output mutably and the input immutably
+            let (outgoing_slice, incoming_slice) = intermediate_gradients_slice.split_at_mut(i + 1);
+
+            // Load the layer
+            let layer = &mut self.layers[i];
+
+            // Get the correct input and output
+            let incoming_gradient = incoming_slice.first().unwrap();
+            let outgoing_gradient = outgoing_slice.last_mut().unwrap();
+            let input = &self.intermediate_states[i];
+            let output = &self.intermediate_states[i + 1];
+
+            // Propagate through network
+            layer.backward(input, output, incoming_gradient, outgoing_gradient)?;
         }
 
         return Ok(());
@@ -341,6 +404,68 @@ mod test {
 
         // Check the result is as expected
         assert_eq!(expected_result, *result);
+    }
+
+    #[test]
+    fn test_network_backward() {
+        // Create layers
+        let mut layer_1 = FullyConnectedLayer::new(2, 3, &String::from("full_layer_1"));
+        let mut layer_2 = FullyConnectedLayer::new(3, 2, &String::from("full_layer_2"));
+
+        // Fill weights and bias values
+        layer_1.fill_weights_with_value(1.0);
+        layer_1.fill_bias_with_value(2.0);
+
+        layer_2.fill_weights_with_value(3.0);
+        layer_2.fill_bias_with_value(4.0);
+
+        // Create input
+        let mut input_tensor = Tensor::new(TensorShape::new(2, 1, 1));
+        input_tensor.fill_with_value(1.0);
+
+        // Create network
+        let mut network = Network::new(NetworkRunState::Inference);
+        network.add_layer(layer_1).unwrap();
+        network.add_layer(layer_2).unwrap();
+
+        network.switch_to_training();
+
+        // Infer and check this does not thrown an error
+        assert!(network.infer(&input_tensor).is_ok());
+
+        // Construct the expected result tensor
+        let result = network.get_output().unwrap();
+
+        let mut expected_result = Tensor::new(TensorShape {
+            di: 2,
+            dj: 1,
+            dk: 1,
+        });
+        expected_result.fill_with_value(40.0);
+
+        // Check the result is as expected
+        assert_eq!(expected_result, *result);
+
+        let mut incoming_gradient = Tensor::new(result.get_shape());
+        incoming_gradient.fill_with_value(1.0);
+
+        // Backprop
+        assert!(network.backward(&incoming_gradient).is_ok());
+
+        // Expected tensors
+        let mut expected_intermediate_gradient = Tensor::new(TensorShape::new_1d(3));
+        expected_intermediate_gradient.fill_with_value(6.0);
+        let mut expected_final_gradient = Tensor::new(input_tensor.get_shape());
+        expected_final_gradient.fill_with_value(18.0);
+
+        assert_eq!(
+            expected_intermediate_gradient,
+            *network.intermediate_gradients.get(1).unwrap()
+        );
+        assert_eq!(
+            expected_final_gradient,
+            *network.intermediate_gradients.first().unwrap()
+        );
     }
 
     #[test]
