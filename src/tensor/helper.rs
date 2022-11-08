@@ -58,6 +58,14 @@ impl TensorShape {
     pub fn get(self: &Self) -> (u32, u32, u32) {
         return (self.di, self.dj, self.dk);
     }
+
+    pub fn transpose_ij(self: &Self) -> Self {
+        return TensorShape {
+            di: self.dj,
+            dj: self.di,
+            dk: self.dk,
+        };
+    }
 }
 
 // Structure to index into a tensor

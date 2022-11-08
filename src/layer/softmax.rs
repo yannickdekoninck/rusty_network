@@ -3,6 +3,7 @@ use std::cmp::Eq;
 use std::collections::HashMap;
 
 use crate::layer::Layer;
+use crate::network::NetworkRunState;
 use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
 
@@ -18,6 +19,9 @@ pub enum SoftMaxSerialKeys {
 pub struct SoftmaxLayer {
     shape: TensorShape,
     name: String,
+    intermediate1: Tensor,
+    intermediate2: Tensor,
+    run_state: NetworkRunState,
 }
 
 impl SoftmaxLayer {
@@ -35,9 +39,30 @@ impl SoftmaxLayer {
                 dk: 1,
             },
             name: String::from("Empty softmax layer"),
+            intermediate1: Tensor::empty(),
+            intermediate2: Tensor::empty(),
+            run_state: NetworkRunState::Inference,
         };
 
         return sm;
+    }
+
+    fn update_gradient_and_intermediate_tensors(self: &mut Self) {
+        match self.run_state {
+            NetworkRunState::Inference => {
+                // Clean up all training related tensors
+
+                self.intermediate1 = Tensor::empty();
+                self.intermediate2 = Tensor::empty();
+            }
+            NetworkRunState::Training => {
+                // Allocate all tensors required for training
+                self.intermediate1 = Tensor::new(TensorShape::new_1d(1));
+                self.intermediate2 = Tensor::new(self.shape);
+                // Fill up all tensors with 0.0
+                self.clear_gradients();
+            }
+        }
     }
 
     pub fn fill_from_state(
@@ -47,6 +72,7 @@ impl SoftmaxLayer {
     ) -> Result<(), &'static str> {
         self.shape = shape;
         self.name = name.clone();
+        self.update_gradient_and_intermediate_tensors();
         return Ok(());
     }
 
@@ -77,9 +103,42 @@ impl SoftmaxLayer {
 }
 
 impl Layer for SoftmaxLayer {
-    fn forward(self: &Self, input: &Tensor, output: &mut Tensor) {
+    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
         Tensor::softmax(input, output);
-        return;
+        return Ok(());
+    }
+    fn backward(
+        self: &mut Self,
+        _input: &Tensor,
+        output: &Tensor,
+        incoming_gradient: &Tensor,
+        outgoing_gradient: &mut Tensor,
+    ) -> Result<(), &'static str> {
+        if self.run_state == NetworkRunState::Inference {
+            return Err("Can only do backprop in training mode");
+        }
+        // softmax Transoped @ incoming gradient -> yields 1x1x1 tensors
+        Tensor::matrix_multiply_transpose_first(
+            output,
+            incoming_gradient,
+            &mut self.intermediate1,
+        )?;
+
+        // Invert
+        Tensor::scale_self(&mut self.intermediate1, -1.0);
+
+        // Multiply with output
+
+        Tensor::matrix_multiply(output, &self.intermediate1, &mut self.intermediate2);
+
+        // Element wise multiplication for diagonal elements
+        Tensor::multiply_elementwise(&output, incoming_gradient, outgoing_gradient);
+
+        // Adding up both results
+
+        Tensor::add_to_self(outgoing_gradient, &self.intermediate2);
+
+        return Ok(());
     }
     fn get_output_shape(self: &Self) -> TensorShape {
         return self.shape.clone();
@@ -91,6 +150,9 @@ impl Layer for SoftmaxLayer {
 
     fn get_name(self: &Self) -> String {
         return self.name.clone();
+    }
+    fn get_run_mode(self: &Self) -> NetworkRunState {
+        return self.run_state.clone();
     }
     fn get_serialized(self: &Self) -> SerializedLayer {
         // Create empty map
@@ -118,6 +180,21 @@ impl Layer for SoftmaxLayer {
                 return Err("Layer type does not match soft max type");
             }
         }
+    }
+
+    fn switch_to_inference(self: &mut Self) {
+        self.run_state = NetworkRunState::Inference;
+        self.update_gradient_and_intermediate_tensors();
+    }
+
+    fn switch_to_training(self: &mut Self) {
+        self.run_state = NetworkRunState::Training;
+        self.update_gradient_and_intermediate_tensors();
+    }
+
+    fn clear_gradients(self: &mut Self) {
+        self.intermediate1.fill_with_value(0.0);
+        self.intermediate2.fill_with_value(0.0);
     }
 }
 
@@ -151,5 +228,55 @@ mod test {
                 dk: 3,
             },
         );
+    }
+
+    #[test]
+    fn test_backprop() {
+        let mut input = Tensor::new(TensorShape::new_1d(3));
+        let mut output = Tensor::new(TensorShape::new_1d(3));
+        let mut incoming_gradient = Tensor::new(TensorShape::new_1d(3));
+        let mut outgoing_gradient = Tensor::new(TensorShape::new_1d(3));
+        let mut expected_outgoing_gradient = Tensor::new(TensorShape::new_1d(3));
+        let mut expected_output = Tensor::new(TensorShape::new_1d(3));
+        assert!(input.fill_with_vec(vec![1.0, 2.0, 3.0]).is_ok());
+        let sum: f32 = (1.0 as f32).exp() + (2.0 as f32).exp() + (3.0 as f32).exp();
+        let ov = vec![
+            (1.0 as f32).exp() / sum,
+            (2.0 as f32).exp() / sum,
+            (3.0 as f32).exp() / sum,
+        ];
+        assert!(expected_output.fill_with_vec(ov.clone()).is_ok());
+        assert!(incoming_gradient.fill_with_vec(vec![4.0, 5.0, 6.0]).is_ok());
+        let mut jacobian = Tensor::new(TensorShape::new_2d(3, 3));
+        assert!(jacobian
+            .fill_with_vec(vec![
+                ov[0] * (1.0 - ov[0]),
+                -ov[0] * ov[1],
+                -ov[0] * ov[2],
+                -ov[0] * ov[1],
+                ov[1] * (1.0 - ov[1]),
+                -ov[1] * ov[2],
+                -ov[0] * ov[2],
+                -ov[1] * ov[2],
+                ov[2] * (1.0 - ov[2]),
+            ])
+            .is_ok());
+        Tensor::matrix_multiply(
+            &jacobian,
+            &incoming_gradient,
+            &mut expected_outgoing_gradient,
+        );
+        let mut sml = SoftmaxLayer::new(input.get_shape(), &String::from("softmax layer")).unwrap();
+        sml.switch_to_training();
+        assert!(sml.forward(&input, &mut output).is_ok());
+        assert_eq!(output, expected_output);
+        assert!(sml
+            .backward(
+                &input,
+                &mut output,
+                &incoming_gradient,
+                &mut outgoing_gradient
+            )
+            .is_ok());
     }
 }

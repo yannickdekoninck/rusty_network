@@ -1,7 +1,7 @@
 use super::SerializedLayer;
-use crate::layer::Layer;
 use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
+use crate::{layer::Layer, network::NetworkRunState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -19,6 +19,8 @@ pub struct MaxPoolLayer {
     output_shape: TensorShape,
     stride: u32,
     name: String,
+    run_state: NetworkRunState,
+    max_pool_origin: Vec<u32>,
 }
 
 impl MaxPoolLayer {
@@ -53,8 +55,25 @@ impl MaxPoolLayer {
             },
             stride: 1,
             name: String::from("Empty max pool layer"),
+            run_state: NetworkRunState::Inference,
+            max_pool_origin: vec![],
         };
         return mp;
+    }
+
+    fn update_gradient_and_intermediate_tensors(self: &mut Self) {
+        match self.run_state {
+            NetworkRunState::Inference => {
+                // Clean up all training related tensors
+                self.max_pool_origin = vec![];
+            }
+            NetworkRunState::Training => {
+                // Allocate a vector of indices to store the origin of the max pool
+                self.max_pool_origin = vec![0; self.output_shape.total_size() as usize];
+                // Fill up all tensors with 0.0
+                self.clear_gradients();
+            }
+        }
     }
 
     pub fn fill_from_state(
@@ -105,31 +124,58 @@ impl MaxPoolLayer {
         let mask_shape_data = data
             .get(&MaxPoolSerialKeys::MaskShape)
             .expect("Cannot access mask shape data");
-        self.mask_shape =
+        let mask_shape: TensorShape =
             bincode::deserialize(mask_shape_data).expect("Cannot deserialize mask shape data");
         let input_shape_data = data
             .get(&MaxPoolSerialKeys::InputShape)
             .expect("Cannot access input shape data");
-        self.input_shape =
+        let input_shape: TensorShape =
             bincode::deserialize(input_shape_data).expect("Cannot deserialize input shape data");
         let stride_data = data
             .get(&MaxPoolSerialKeys::Stride)
             .expect("Cannot access stride data");
-        self.stride = bincode::deserialize(&stride_data).expect("Cannot deserialize stride data");
+        let stride: u32 =
+            bincode::deserialize(&stride_data).expect("Cannot deserialize stride data");
 
         let name_data = data
             .get(&MaxPoolSerialKeys::Name)
             .expect("Cannot access name data");
-        self.name = bincode::deserialize(name_data).expect("Cannot deserialize name data");
-
-        return Ok(());
+        let name: String = bincode::deserialize(name_data).expect("Cannot deserialize name data");
+        return self.fill_from_state(input_shape, mask_shape, stride, &name);
     }
 }
 
 impl Layer for MaxPoolLayer {
-    fn forward(self: &Self, input: &Tensor, output: &mut Tensor) {
-        Tensor::max_pool(input, &self.mask_shape, self.stride, output);
-        return;
+    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
+        match self.run_state {
+            NetworkRunState::Inference => {
+                Tensor::max_pool(input, &self.mask_shape, self.stride, output);
+            }
+            NetworkRunState::Training => {
+                Tensor::max_pool_track_origin(
+                    input,
+                    &self.mask_shape,
+                    self.stride,
+                    output,
+                    &mut self.max_pool_origin,
+                )?;
+            }
+        }
+        return Ok(());
+    }
+
+    fn backward(
+        self: &mut Self,
+        _input: &Tensor,
+        _output: &Tensor,
+        incoming_gradient: &Tensor,
+        outgoing_gradient: &mut Tensor,
+    ) -> Result<(), &'static str> {
+        // Make sure the outgoing gradient is clean
+        outgoing_gradient.fill_with_value(0.0);
+        // Perform the backprop
+        Tensor::add_from_index_list(incoming_gradient, outgoing_gradient, &self.max_pool_origin)?;
+        return Ok(());
     }
     fn get_output_shape(self: &Self) -> TensorShape {
         return self.output_shape.clone();
@@ -141,6 +187,9 @@ impl Layer for MaxPoolLayer {
 
     fn get_name(self: &Self) -> String {
         return self.name.clone();
+    }
+    fn get_run_mode(self: &Self) -> NetworkRunState {
+        return self.run_state.clone();
     }
 
     fn get_serialized(self: &Self) -> SerializedLayer {
@@ -173,6 +222,26 @@ impl Layer for MaxPoolLayer {
                 return Err("Layer type does not match max pool type");
             }
         }
+    }
+
+    fn clear_gradients(self: &mut Self) {
+        for v in self.max_pool_origin.iter_mut() {
+            *v = 0;
+        }
+    }
+
+    fn switch_to_inference(self: &mut Self) {
+        // Update run state
+        self.run_state = NetworkRunState::Inference;
+        // Empty gradients
+        self.update_gradient_and_intermediate_tensors();
+    }
+
+    fn switch_to_training(self: &mut Self) {
+        // Update run state
+        self.run_state = NetworkRunState::Training;
+        // Create tensors with the correct shapes
+        self.update_gradient_and_intermediate_tensors();
     }
 }
 
@@ -235,5 +304,62 @@ mod test {
             },
         );
         assert_eq!(mpl2.stride, 1);
+    }
+
+    #[test]
+    fn test_backprop() {
+        // Create layer
+
+        let mut mpl = MaxPoolLayer::empty();
+        let mut image = Tensor::new(TensorShape::new_2d(3, 3));
+        assert!(image
+            .fill_with_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+            .is_ok());
+
+        let mask_shape = TensorShape::new_2d(2, 2);
+        let output_shape = TensorShape::new_2d(2, 2);
+
+        let mut output = Tensor::new(output_shape.clone());
+        let mut expected_output = Tensor::new(output_shape.clone());
+        assert!(expected_output
+            .fill_with_vec(vec![5.0, 6.0, 8.0, 9.0])
+            .is_ok());
+
+        let mut incoming_gradient = Tensor::new(output_shape.clone());
+        assert!(incoming_gradient
+            .fill_with_vec(vec![5.0, 4.0, 3.0, 2.0])
+            .is_ok());
+
+        let mut outgoing_gradient = Tensor::new(image.get_shape());
+        let mut expected_outgoing_gradient = Tensor::new(image.get_shape());
+        assert!(expected_outgoing_gradient
+            .fill_with_vec(vec![0.0, 0.0, 0.0, 0.0, 5.0, 4.0, 0.0, 3.0, 2.0])
+            .is_ok());
+
+        let expected_origin_track: Vec<u32> = vec![4, 5, 7, 8];
+
+        // Create max poollayer
+        assert!(mpl
+            .fill_from_state(
+                image.get_shape(),
+                mask_shape,
+                1,
+                &String::from("Test layer")
+            )
+            .is_ok());
+
+        mpl.switch_to_training();
+
+        assert!(mpl.forward(&image, &mut output).is_ok());
+
+        // Forward pass tests
+        assert_eq!(output, expected_output);
+        assert_eq!(mpl.max_pool_origin, expected_origin_track);
+
+        assert!(mpl
+            .backward(&image, &output, &incoming_gradient, &mut outgoing_gradient)
+            .is_ok());
+        // Backward pass tests
+        assert_eq!(outgoing_gradient, expected_outgoing_gradient);
     }
 }

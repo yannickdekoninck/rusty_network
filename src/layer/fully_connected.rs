@@ -1,5 +1,5 @@
 use super::SerializedLayer;
-use crate::layer::Layer;
+use crate::{layer::Layer, network::NetworkRunState};
 
 use crate::tensor::helper::TensorShape;
 use crate::tensor::Tensor;
@@ -15,38 +15,60 @@ pub enum FullyConnectedSerialKeys {
 
 pub struct FullyConnectedLayer {
     weights: Tensor,
+    weights_gradients: Tensor,
+    weights_gradients_intermediate: Tensor,
     bias: Tensor,
+    bias_gradients: Tensor,
+    relu_mask: Tensor,
     name: String,
+    run_state: NetworkRunState,
 }
 
 impl FullyConnectedLayer {
+    fn update_gradient_and_intermediate_tensors(self: &mut Self) {
+        match self.run_state {
+            NetworkRunState::Inference => {
+                // Clean up all training related tensors
+                self.weights_gradients = Tensor::empty();
+                self.weights_gradients_intermediate = Tensor::empty();
+                self.bias_gradients = Tensor::empty();
+                self.relu_mask = Tensor::empty();
+            }
+            NetworkRunState::Training => {
+                // Allocate all tensors required for training
+                self.weights_gradients = Tensor::new(self.weights.get_shape());
+                self.weights_gradients_intermediate = Tensor::new(self.weights.get_shape());
+                self.bias_gradients = Tensor::new(self.bias.get_shape());
+                self.relu_mask = Tensor::new(self.get_output_shape());
+                // Fill up all tensors with 0.0
+                self.clear_gradients();
+            }
+        }
+    }
+
     pub fn new(input_size: u32, output_size: u32, name: &String) -> FullyConnectedLayer {
+        let mut fcl = FullyConnectedLayer::empty();
         let weights = Tensor::new(TensorShape::new(output_size, input_size, 1));
         let bias: Tensor = Tensor::new(TensorShape {
             di: output_size,
             dj: 1,
             dk: 1,
         });
-        return FullyConnectedLayer {
-            weights: weights,
-            bias: bias,
-            name: name.clone(),
-        };
+        fcl.fill_from_state(weights, bias, name).unwrap();
+        return fcl;
     }
 
     pub fn empty() -> Self {
+        // Initialize an empty fully connected layer
         let fc = FullyConnectedLayer {
-            weights: Tensor::new(TensorShape {
-                di: 1,
-                dj: 1,
-                dk: 1,
-            }),
-            bias: Tensor::new(TensorShape {
-                di: 1,
-                dj: 1,
-                dk: 1,
-            }),
+            weights: Tensor::empty(),
+            bias: Tensor::empty(),
+            weights_gradients: Tensor::empty(),
+            weights_gradients_intermediate: Tensor::empty(),
+            bias_gradients: Tensor::empty(),
+            relu_mask: Tensor::empty(),
             name: String::from("Empty fully connected layer"),
+            run_state: NetworkRunState::Inference,
         };
 
         return fc;
@@ -75,6 +97,8 @@ impl FullyConnectedLayer {
         self.weights = weights;
         self.bias = bias;
         self.name = name.clone();
+        // Update the helper tensors
+        self.update_gradient_and_intermediate_tensors();
         return Ok(());
     }
 
@@ -122,10 +146,61 @@ impl FullyConnectedLayer {
 }
 
 impl Layer for FullyConnectedLayer {
-    fn forward(self: &Self, input: &Tensor, output: &mut Tensor) {
-        Tensor::matrix_multiply_add_relu(input, &self.weights, &self.bias, output);
-        return;
+    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
+        match self.run_state {
+            NetworkRunState::Inference => {
+                // Take the faster multiply add relu in 1 go
+                Tensor::matrix_multiply_add_relu(input, &self.weights, &self.bias, output);
+            }
+            NetworkRunState::Training => {
+                // Take the piecewise route so we can keep track of the relu mask which we need for backprop
+
+                // Multiply with weights
+                Tensor::matrix_multiply(&self.weights, input, output);
+                // Add bias
+                Tensor::add_to_self(output, &self.bias);
+                // ReLu
+                Tensor::relu_self_and_store_mask(output, &mut self.relu_mask)?;
+            }
+        }
+        return Ok(());
     }
+
+    fn backward(
+        self: &mut Self,
+        input: &Tensor,
+        _output: &Tensor,
+        incoming_gradient: &Tensor,
+        outgoing_gradient: &mut Tensor,
+    ) -> Result<(), &'static str> {
+        if self.run_state == NetworkRunState::Training {
+            // Apply the relu backrop
+            Tensor::multiply_elementwise_self(&mut self.relu_mask, incoming_gradient);
+
+            // bias gradient
+            Tensor::add_to_self(&mut self.bias_gradients, &self.relu_mask);
+            // weights gradient
+            Tensor::matrix_multiply_transpose_second(
+                &self.relu_mask,
+                input,
+                &mut self.weights_gradients_intermediate,
+            )?;
+            Tensor::add_to_self(
+                &mut self.weights_gradients,
+                &self.weights_gradients_intermediate,
+            );
+            // outgoing gradient
+            Tensor::matrix_multiply_transpose_first(
+                &self.weights,
+                &self.relu_mask,
+                outgoing_gradient,
+            )?;
+            return Ok(());
+        } else {
+            return Err("Can only do backprop in training mode");
+        }
+    }
+
     fn get_output_shape(self: &Self) -> TensorShape {
         return self.bias.get_shape();
     }
@@ -140,6 +215,31 @@ impl Layer for FullyConnectedLayer {
 
     fn get_name(self: &Self) -> String {
         return self.name.clone();
+    }
+
+    fn get_run_mode(self: &Self) -> NetworkRunState {
+        return self.run_state.clone();
+    }
+
+    fn switch_to_inference(self: &mut Self) {
+        // Update run state
+        self.run_state = NetworkRunState::Inference;
+        // Empty gradients
+        self.update_gradient_and_intermediate_tensors();
+    }
+
+    fn switch_to_training(self: &mut Self) {
+        // Update run state
+        self.run_state = NetworkRunState::Training;
+        // Create tensors with the correct shapes
+        self.update_gradient_and_intermediate_tensors();
+    }
+
+    fn clear_gradients(self: &mut Self) {
+        self.weights_gradients_intermediate.fill_with_value(0.0);
+        self.weights_gradients.fill_with_value(0.0);
+        self.bias_gradients.fill_with_value(0.0);
+        self.relu_mask.fill_with_value(0.0);
     }
 
     fn get_serialized(self: &Self) -> SerializedLayer {
@@ -205,5 +305,71 @@ mod test {
         assert_eq!(other_layer.weights, fc_layer.weights);
         assert_eq!(other_layer.bias, fc_layer.bias);
         assert_eq!(other_layer.name, fc_layer.name);
+    }
+
+    #[test]
+    fn test_backprop() {
+        // Create layer
+
+        let mut fcl = FullyConnectedLayer::empty();
+        let mut weights = Tensor::new(TensorShape::new_2d(3, 3));
+        assert!(weights
+            .fill_with_vec(vec![1.0, 2.0, 3.0, -1.0, -2.0, -8.0, 1.0, 1.0, -2.0])
+            .is_ok());
+
+        let mut bias = Tensor::new(TensorShape::new_1d(3));
+        assert!(bias.fill_with_vec(vec![1.0, 0.0, 2.0]).is_ok());
+
+        let mut input = Tensor::new(TensorShape::new_1d(3));
+        assert!(input.fill_with_vec(vec![2.0, 1.0, 1.0]).is_ok());
+
+        let mut expected_output = Tensor::new(TensorShape::new_1d(3));
+        assert!(expected_output.fill_with_vec(vec![3.0, 3.0, 0.0]).is_ok());
+
+        let mut output = Tensor::new(TensorShape::new_1d(3));
+        let mut outgoing_gradient = Tensor::new(TensorShape::new_1d(3));
+        let mut incoming_gradient = Tensor::new(TensorShape::new_1d(3));
+
+        let mut expected_outgoing_gradient = Tensor::new(TensorShape::new_1d(3));
+        assert!(expected_outgoing_gradient
+            .fill_with_vec(vec![5.0, -5.0, 3.0])
+            .is_ok());
+
+        let mut expected_bias_gradient = Tensor::new(TensorShape::new_1d(3));
+        assert!(expected_bias_gradient
+            .fill_with_vec(vec![1.0, 2.0, 0.0])
+            .is_ok());
+
+        let mut expected_weights_gradient = Tensor::new(TensorShape::new_2d(3, 3));
+        assert!(expected_weights_gradient
+            .fill_with_vec(vec![2.0, 4.0, 0.0, 1.0, 2.0, 0.0, 1.0, 2.0, 0.0])
+            .is_ok());
+
+        let mut expected_relu_maskt = Tensor::new(TensorShape::new_1d(3));
+        assert!(expected_relu_maskt
+            .fill_with_vec(vec![1.0, 1.0, 0.0])
+            .is_ok());
+
+        assert!(incoming_gradient.fill_with_vec(vec![1.0, 2.0, 3.0]).is_ok());
+
+        assert!(fcl
+            .fill_from_state(weights, bias, &String::from("Test layer"))
+            .is_ok());
+
+        fcl.switch_to_training();
+
+        assert!(fcl.forward(&input, &mut output).is_ok());
+
+        // Forward pass tests
+        assert_eq!(output, expected_output);
+        assert_eq!(fcl.relu_mask, expected_relu_maskt);
+
+        assert!(fcl
+            .backward(&input, &output, &incoming_gradient, &mut outgoing_gradient)
+            .is_ok());
+        // Backward pass tests
+        assert_eq!(outgoing_gradient, expected_outgoing_gradient);
+        assert_eq!(fcl.bias_gradients, expected_bias_gradient);
+        assert_eq!(fcl.weights_gradients, expected_weights_gradient);
     }
 }

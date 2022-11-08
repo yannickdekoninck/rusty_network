@@ -1,4 +1,5 @@
 pub mod helper;
+pub mod operations;
 
 use helper::TensorIndex;
 use helper::TensorShape;
@@ -41,6 +42,15 @@ impl Tensor {
         };
     }
 
+    pub fn empty() -> Tensor {
+        let tensor_shape = TensorShape {
+            di: 1,
+            dj: 1,
+            dk: 1,
+        };
+        return Tensor::new(tensor_shape);
+    }
+
     pub fn total_items(self: &Self) -> u32 {
         return self.shape.total_size();
     }
@@ -69,6 +79,14 @@ impl Tensor {
         return self.shape.clone();
     }
 
+    pub fn get_norm(self: &Self) -> f32 {
+        let mut total = 0.;
+        for d in self.data.iter() {
+            total += (*d).powi(2);
+        }
+        return total.sqrt();
+    }
+
     pub fn fill_with_uniform(&mut self, min: f32, max: f32) {
         let uniform_distribution = rand::distributions::Uniform::new_inclusive(min, max);
         let mut rng = rand::prelude::thread_rng();
@@ -89,6 +107,14 @@ impl Tensor {
         for v in &mut self.data {
             *v = value;
         }
+    }
+
+    pub fn fill_with_vec(&mut self, data: Vec<f32>) -> Result<(), &'static str> {
+        if data.len() != (self.total_items() as usize) {
+            return Err("Vec data did not contain the correct number of items");
+        }
+        self.data = data;
+        return Ok(());
     }
 
     pub fn save_to_file(self: &Self, filename: &String) -> Result<(), Box<dyn Error>> {
@@ -113,6 +139,35 @@ impl Tensor {
             }
         }
     }
+    pub fn add_to_self(tensor1: &mut Tensor, tensor2: &Tensor) {
+        if tensor1.shape == tensor2.shape {
+            // Create operants iterator
+            let operants = tensor1.data.iter_mut().zip(tensor2.data.iter());
+            // Loop through items and calculate results
+            for (op1, op2) in operants {
+                *op1 = *op1 + *op2;
+            }
+        }
+    }
+
+    pub fn add_from_index_list(
+        tensor1: &Tensor,
+        tensor2: &mut Tensor,
+        index_list: &Vec<u32>,
+    ) -> Result<(), &'static str> {
+        if index_list.len() > tensor1.get_shape().total_size() as usize {
+            return Err("Index list is too long");
+        }
+        let t2_items = tensor2.get_shape().total_size();
+        for (t1_index, t2_index) in index_list.iter().enumerate() {
+            if *t2_index >= t2_items {
+                return Err("Tensor 2 index out of bounds");
+            }
+            tensor2.data[*t2_index as usize] += tensor1.data[t1_index]
+        }
+
+        return Ok(());
+    }
 
     pub fn scale(tensor: &Tensor, scalar: f32, result: &mut Tensor) {
         if tensor.shape == result.shape {
@@ -122,11 +177,172 @@ impl Tensor {
             }
         }
     }
+
+    pub fn scale_self(tensor: &mut Tensor, scalar: f32) {
+        // Loop through items and calculate results
+        for sl in tensor.data.iter_mut() {
+            *sl *= scalar;
+        }
+    }
+    pub fn multiply_elementwise_self(tensor1: &mut Tensor, tensor2: &Tensor) {
+        if tensor1.shape == tensor2.shape {
+            // Create operants iterator
+            let operants = tensor1.data.iter_mut().zip(tensor2.data.iter());
+            // Loop through items and calculate results
+            for (op1, op2) in operants {
+                *op1 = *op1 * *op2;
+            }
+        }
+    }
+    pub fn multiply_elementwise(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
+        if (tensor1.shape == tensor2.shape) && (tensor1.shape == result.shape) {
+            // Create operants iterator
+            let operants = tensor1.data.iter().zip(tensor2.data.iter());
+            // Loop through items and calculate results
+            for (rs, (op1, op2)) in result.data.iter_mut().zip(operants) {
+                *rs = *op1 * *op2;
+            }
+        }
+    }
+
+    pub fn relu_self_and_store_mask(
+        input: &mut Tensor,
+        mask: &mut Tensor,
+    ) -> Result<(), &'static str> {
+        if input.get_shape() != mask.get_shape() {
+            return Err("relu_self_and_store_mask: Input and mask must have the same shape");
+        }
+        for (in_data, mask_data) in input.data.iter_mut().zip(mask.data.iter_mut()) {
+            if *in_data > 0.0 {
+                *mask_data = 1.0;
+            } else {
+                {
+                    *in_data = 0.0;
+                    *mask_data = 0.0;
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    pub fn transpose_ij(input: &Tensor, output: &mut Tensor) -> Result<(), &'static str> {
+        // Check dimensions
+        let input_shape = input.get_shape();
+        let output_shape = output.get_shape();
+        if input_shape.dk != output_shape.dk {
+            return Err("Third dimension must match for transpose ij");
+        }
+        if input_shape.di != output_shape.dj {
+            return Err("i and j of input and output must match");
+        }
+        if input_shape.dj != output_shape.di {
+            return Err("j and i of input and output must match");
+        }
+        // Transpose loop
+
+        for k in 0..output_shape.dk {
+            for j in 0..output_shape.dj {
+                for i in 0..output_shape.di {
+                    let output_id =
+                        output.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+                    let input_id = input.get_data_index(&TensorIndex { i: j, j: i, k: k }) as usize;
+                    output.data[output_id] = input.data[input_id];
+                }
+            }
+        }
+
+        return Ok(());
+    }
+
+    pub fn matrix_multiply_transpose_first(
+        tensor1: &Tensor,
+        tensor2: &Tensor,
+        result: &mut Tensor,
+    ) -> Result<(), &'static str> {
+        // This is simular to matrix multiply but first transposes transposes tensor2 before doing the multiplication
+        // Check if the dimensions allow for matrix multiplication
+        let shape_1 = tensor1.get_shape();
+        let shape_2 = tensor2.get_shape();
+        let shape_r = result.get_shape();
+        // Check tensor shape with transposed tensor
+        if !Tensor::check_matrix_multiply_dimensions(shape_1.transpose_ij(), shape_2, shape_r) {
+            return Err("Shapes do not match for matrix multiply transpose");
+        }
+        // Loop over the outer dimension
+        for k in 0..shape_r.dk {
+            for j in 0..shape_r.dj {
+                for i in 0..shape_r.di {
+                    let mut running_result = 0.0;
+
+                    // inner adder loop
+
+                    for ii in 0..shape_1.di {
+                        let get_index1 =
+                            tensor1.get_data_index(&TensorIndex { i: ii, j: i, k: k }) as usize;
+
+                        let get_index2 =
+                            tensor2.get_data_index(&TensorIndex { i: ii, j: j, k: k }) as usize;
+
+                        running_result += tensor1.data[get_index1] * tensor2.data[get_index2];
+                    }
+
+                    let set_index =
+                        result.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+                    result.data[set_index] = running_result;
+                }
+            }
+        }
+        return Ok(());
+    }
+    pub fn matrix_multiply_transpose_second(
+        tensor1: &Tensor,
+        tensor2: &Tensor,
+        result: &mut Tensor,
+    ) -> Result<(), &'static str> {
+        // This is simular to matrix multiply but first transposes transposes tensor2 before doing the multiplication
+        // Check if the dimensions allow for matrix multiplication
+        let shape_1 = tensor1.get_shape();
+        let shape_2 = tensor2.get_shape();
+        let shape_r = result.get_shape();
+        // Check tensor shape with transposed tensor
+        if !Tensor::check_matrix_multiply_dimensions(shape_1, shape_2.transpose_ij(), shape_r) {
+            return Err("Shapes do not match for matrix multiply transpose");
+        }
+        // Loop over the outer dimension
+        for k in 0..shape_r.dk {
+            for j in 0..shape_r.dj {
+                for i in 0..shape_r.di {
+                    let mut running_result = 0.0;
+
+                    // inner adder loop
+
+                    for ii in 0..shape_1.dj {
+                        let get_index1 =
+                            tensor1.get_data_index(&TensorIndex { i: i, j: ii, k: k }) as usize;
+
+                        let get_index2 =
+                            tensor2.get_data_index(&TensorIndex { i: j, j: ii, k: k }) as usize;
+
+                        running_result += tensor1.data[get_index1] * tensor2.data[get_index2];
+                    }
+
+                    let set_index =
+                        result.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+                    result.data[set_index] = running_result;
+                }
+            }
+        }
+        return Ok(());
+    }
     pub fn matrix_multiply(tensor1: &Tensor, tensor2: &Tensor, result: &mut Tensor) {
         // Check if the dimensions allow for matrix multiplication
         let sr = result.shape.get();
         let s1 = tensor1.shape.get();
-        if Tensor::check_matrix_multiply_dimensions(tensor1, tensor2, result) {
+        if Tensor::check_matrix_multiply_dimensions(
+            tensor1.get_shape(),
+            tensor2.get_shape(),
+            result.get_shape(),
+        ) {
             // Loop over the outer dimension
             for k in 0..sr.2 {
                 for j in 0..sr.1 {
@@ -155,19 +371,16 @@ impl Tensor {
     }
 
     fn check_matrix_multiply_dimensions(
-        tensor1: &Tensor,
-        tensor2: &Tensor,
-        result: &Tensor,
+        st1: TensorShape,
+        st2: TensorShape,
+        sr: TensorShape,
     ) -> bool {
-        let st1 = tensor1.shape.get();
-        let st2 = tensor2.shape.get();
-        let sr = result.shape.get();
         // Outer dimensions must be the same
-        if st1.2 != st2.2 || st1.2 != sr.2 {
+        if st1.dk != st2.dk || st1.dk != sr.dk {
             return false;
         }
         // Inner dimensions must match
-        if st1.1 != st2.0 || st1.0 != sr.0 || st2.1 != sr.1 {
+        if st1.dj != st2.di || st1.di != sr.di || st2.dj != sr.dj {
             return false;
         }
         return true;
@@ -183,7 +396,11 @@ impl Tensor {
         // This should save storing and loading of intermediate values
         // Everything should be nice and hot in the cache
 
-        if Tensor::check_matrix_multiply_dimensions(weights, &input, &result) {
+        if Tensor::check_matrix_multiply_dimensions(
+            weights.get_shape(),
+            input.get_shape(),
+            result.get_shape(),
+        ) {
             // Check we can do the add
             if bias.shape == result.shape {
                 let result_shape = result.shape.get();
@@ -212,12 +429,13 @@ impl Tensor {
 
                             let bias_index =
                                 bias.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+                            let set_index =
+                                result.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
+
                             running_result += bias.data[bias_index];
 
                             running_result = running_result.max(0.0);
 
-                            let set_index =
-                                result.get_data_index(&TensorIndex { i: i, j: j, k: k }) as usize;
                             result.data[set_index] = running_result;
                         }
                     }
@@ -251,103 +469,7 @@ impl Tensor {
         return (dim0_kernel_fits, dim1_kernel_fits);
     }
 
-    pub fn check_convolution_dimensions(
-        image_shape: &TensorShape,
-        kernel_shape: &TensorShape,
-        stride: u32,
-        result_shape: &TensorShape,
-        result_channel: u32,
-    ) -> bool {
-        // We check and immediately exit when something is not right
-        // No need to check anything else
 
-        // image and kernel depth must match
-        if image_shape.dk != kernel_shape.dk {
-            return false;
-        }
-
-        // Check if the kernel fitst in the image given the stride
-        // We assume that the image is properly padded
-        if (image_shape.di - kernel_shape.di) % stride != 0 {
-            return false;
-        }
-        if (image_shape.dj - kernel_shape.dj) % stride != 0 {
-            return false;
-        }
-
-        // Check if the output dimensions are correct
-        let dim0_kernel_fits = (image_shape.di - kernel_shape.di) / stride + 1;
-        let dim1_kernel_fits = (image_shape.dj - kernel_shape.dj) / stride + 1;
-        if result_shape.di != dim0_kernel_fits {
-            return false;
-        }
-        if result_shape.dj != dim1_kernel_fits {
-            return false;
-        }
-
-        // check if the result channel is valid
-        if result_channel >= result_shape.dk {
-            return false;
-        }
-
-        return true;
-    }
-
-    pub fn convolution(
-        image: &Tensor,
-        kernel: &Tensor,
-        stride: u32,
-        result: &mut Tensor,
-        result_channel: u32,
-    ) {
-        if Tensor::check_convolution_dimensions(
-            &image.get_shape(),
-            &kernel.get_shape(),
-            stride,
-            &result.get_shape(),
-            result_channel,
-        ) {
-            // All clear to convolute!
-
-            let result_shape = result.shape.get();
-            let kernel_shape = kernel.shape.get();
-
-            // Main loop over image
-            for j in 0..result_shape.1 {
-                for i in 0..result_shape.0 {
-                    let mut convolution_result: f32 = 0.0;
-                    let image_start_i = i * stride;
-                    let image_start_j = j * stride;
-
-                    // Loop over kernel dimensions and multiply - add
-                    for kk in 0..kernel_shape.2 {
-                        for kj in 0..kernel_shape.1 {
-                            for ki in 0..kernel_shape.0 {
-                                let kernel_id = kernel.get_data_index(&TensorIndex {
-                                    i: ki,
-                                    j: kj,
-                                    k: kk,
-                                }) as usize;
-                                let image_id = image.get_data_index(&TensorIndex {
-                                    i: image_start_i + ki,
-                                    j: image_start_j + kj,
-                                    k: kk,
-                                }) as usize;
-                                convolution_result += image.data[image_id] * kernel.data[kernel_id];
-                            }
-                        }
-                    }
-                    let result_id = result.get_data_index(&TensorIndex {
-                        i: i,
-                        j: j,
-                        k: result_channel,
-                    }) as usize;
-
-                    result.data[result_id] = convolution_result;
-                }
-            }
-        }
-    }
 
     pub fn check_max_pooling_dimensions(
         image_shape: &TensorShape,
@@ -415,6 +537,56 @@ impl Tensor {
                 }
             }
         }
+    }
+    pub fn max_pool_track_origin(
+        image: &Tensor,
+        mask_shape: &TensorShape,
+        stride: u32,
+        result: &mut Tensor,
+        origin_list: &mut Vec<u32>,
+    ) -> Result<(), &'static str> {
+        if !Tensor::check_max_pooling_dimensions(
+            &image.get_shape(),
+            mask_shape,
+            stride,
+            &result.get_shape(),
+        ) {
+            return Err("Max pooling dimensions don't match");
+        }
+        let result_shape = result.get_shape();
+        if result_shape.total_size() as usize != origin_list.len() {
+            return Err("Origin tracker list size is not equal to number of output items");
+        }
+        // Max pooling loop
+        for k in 0..result_shape.dk {
+            for j in 0..result_shape.dj {
+                for i in 0..result_shape.di {
+                    let mut running_max = f32::NEG_INFINITY;
+
+                    let output_ti = TensorIndex { i: i, j: j, k: k };
+                    let output_index = result.get_data_index(&output_ti);
+                    let mut input_index: u32 = 0;
+
+                    for jj in 0..mask_shape.dj {
+                        for ii in 0..mask_shape.di {
+                            let input_ti = TensorIndex {
+                                i: i * stride + ii,
+                                j: j * stride + jj,
+                                k,
+                            };
+                            let current_item = image.get_item(&input_ti);
+                            if current_item > running_max {
+                                running_max = current_item;
+                                input_index = image.get_data_index(&input_ti);
+                            }
+                        }
+                    }
+                    result.set_item(&output_ti, running_max);
+                    origin_list[output_index as usize] = input_index;
+                }
+            }
+        }
+        return Ok(());
     }
 
     pub fn softmax(input: &Tensor, output: &mut Tensor) {
@@ -491,6 +663,28 @@ mod test {
     }
 
     #[test]
+    fn test_vec_fill() {
+        let mut t = Tensor::new(TensorShape {
+            di: 2,
+            dj: 2,
+            dk: 2,
+        });
+        let data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        assert!(t.fill_with_vec(data).is_ok());
+        assert_eq!(t.get_item(&TensorIndex { i: 0, j: 1, k: 1 }), 7.0);
+    }
+    #[test]
+    fn test_get_norm() {
+        let mut t = Tensor::new(TensorShape {
+            di: 1,
+            dj: 3,
+            dk: 1,
+        });
+        let data: Vec<f32> = vec![1.0, 2.0, 3.0];
+        assert!(t.fill_with_vec(data).is_ok());
+        assert_eq!(t.get_norm(), (14 as f32).sqrt());
+    }
+    #[test]
     fn test_tensor_equals() {
         let shape = TensorShape::new(2, 3, 1);
         let t1 = Tensor {
@@ -540,6 +734,134 @@ mod test {
     }
 
     #[test]
+    fn test_tensor_add_to_self() {
+        let shape = TensorShape::new(2, 3, 1);
+        let mut t1 = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        };
+        let t2 = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+        };
+
+        let expected_result = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![3.0, 5.0, 7.0, 9.0, 11.0, 13.0],
+        };
+        Tensor::add_to_self(&mut t1, &t2);
+
+        assert_eq!(expected_result, t1);
+    }
+
+    #[test]
+    fn test_tensor_add_from_index_list() {
+        let result_shape = TensorShape::new(2, 2, 1);
+        let image_shape = TensorShape::new(3, 3, 1);
+        let index_list: Vec<u32> = vec![0, 1, 0, 3];
+        let max_pool_output = Tensor {
+            shape: result_shape,
+            strides: TensorStride::new_from_shape(&result_shape),
+            data: vec![1.0, 2.0, 3.0, 4.0],
+        };
+        let expected_image = Tensor {
+            shape: image_shape.clone(),
+            strides: TensorStride::new_from_shape(&image_shape),
+            data: vec![4.0, 2.0, 0.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        };
+
+        let mut image = Tensor::new(image_shape);
+
+        assert!(Tensor::add_from_index_list(&max_pool_output, &mut image, &index_list).is_ok());
+
+        assert_eq!(expected_image, image);
+    }
+    #[test]
+    fn test_tensor_relu_self_and_store_mask() {
+        let shape = TensorShape::new(7, 1, 1);
+        let mut input = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![1.0, 2.0, -3.0, -4.0, 5.0, -6.0, 7.0],
+        };
+        let mut mask = Tensor::new(shape);
+
+        let expected_mask = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0],
+        };
+        assert!(Tensor::relu_self_and_store_mask(&mut input, &mut mask).is_ok());
+
+        assert_eq!(expected_mask, mask);
+    }
+    #[test]
+    fn test_tensor_multiply_elementwise_self() {
+        let mut t1 = Tensor::new(TensorShape::new_2d(2, 3));
+        let mut t2 = Tensor::new(TensorShape::new_2d(2, 3));
+        let mut expected_result = Tensor::new(TensorShape::new_2d(2, 3));
+
+        t1.fill_with_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .unwrap();
+        t2.fill_with_vec(vec![2.0, 1.0, 3.0, 5.0, 2.0, 1.0])
+            .unwrap();
+        expected_result
+            .fill_with_vec(vec![2.0, 2.0, 9.0, 20.0, 10.0, 6.0])
+            .unwrap();
+
+        Tensor::multiply_elementwise_self(&mut t1, &t2);
+
+        assert_eq!(expected_result, t1);
+    }
+    #[test]
+    fn test_tensor_multiply_elementwise() {
+        let mut t1 = Tensor::new(TensorShape::new_2d(2, 3));
+        let mut t2 = Tensor::new(TensorShape::new_2d(2, 3));
+        let mut result = Tensor::new(TensorShape::new_2d(2, 3));
+        let mut expected_result = Tensor::new(TensorShape::new_2d(2, 3));
+
+        t1.fill_with_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .unwrap();
+        t2.fill_with_vec(vec![2.0, 1.0, 3.0, 5.0, 2.0, 1.0])
+            .unwrap();
+        expected_result
+            .fill_with_vec(vec![2.0, 2.0, 9.0, 20.0, 10.0, 6.0])
+            .unwrap();
+
+        Tensor::multiply_elementwise(&t1, &t2, &mut result);
+
+        assert_eq!(expected_result, result);
+    }
+    #[test]
+    fn test_tensor_transpose_ij() {
+        let input_shape = TensorShape::new(2, 3, 2);
+        let output_shape = TensorShape::new(3, 2, 2);
+        let input = Tensor {
+            shape: input_shape,
+            strides: TensorStride::new_from_shape(&input_shape),
+            data: vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+        };
+        let expected_output = Tensor {
+            shape: output_shape,
+            strides: TensorStride::new_from_shape(&output_shape),
+            data: vec![
+                1.0, 3.0, 5.0, 2.0, 4.0, 6.0, 7.0, 9.0, 11.0, 8.0, 10.0, 12.0,
+            ],
+        };
+
+        let mut output = Tensor::new(output_shape);
+
+        assert!(Tensor::transpose_ij(&input, &mut output).is_ok());
+
+        assert_eq!(expected_output, output);
+    }
+
+    #[test]
     fn test_tensor_scale() {
         let shape = TensorShape::new(2, 3, 1);
         let t1 = Tensor {
@@ -559,6 +881,26 @@ mod test {
         Tensor::scale(&t1, scalar, &mut result);
 
         assert_eq!(expected_result, result);
+    }
+
+    #[test]
+    fn test_tensor_scale_self() {
+        let shape = TensorShape::new(2, 3, 1);
+        let mut t1 = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        };
+        let scalar = 2.0;
+
+        let expected_result = Tensor {
+            shape: shape,
+            strides: TensorStride::new_from_shape(&shape),
+            data: vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0],
+        };
+        Tensor::scale_self(&mut t1, scalar);
+
+        assert_eq!(expected_result, t1);
     }
     #[test]
     fn test_softmax() {
@@ -612,83 +954,76 @@ mod test {
         assert_eq!(expected_result, result);
     }
     #[test]
+    fn test_tensor_matrix_multiply_transpose_first() {
+        let shape_1 = TensorShape::new(3, 1, 1);
+        let shape_2 = TensorShape::new(3, 1, 1);
+        let shape_res = TensorShape::new(1, 1, 1);
+        let t1 = Tensor {
+            shape: shape_1,
+            strides: TensorStride::new_from_shape(&shape_1),
+            data: vec![1.0, 2.0, 3.0],
+        };
+        let t2 = Tensor {
+            shape: shape_2,
+            strides: TensorStride::new_from_shape(&shape_2),
+            data: vec![3.0, 4.0, 5.0],
+        };
+
+        let mut result = Tensor::new(shape_res);
+
+        let expected_result = Tensor {
+            shape: shape_res,
+            strides: TensorStride::new_from_shape(&shape_res),
+            data: vec![26.0],
+        };
+        assert!(Tensor::matrix_multiply_transpose_first(&t1, &t2, &mut result).is_ok());
+
+        assert_eq!(expected_result, result);
+    }
+    #[test]
+    fn test_tensor_matrix_multiply_transpose_second() {
+        let shape_1 = TensorShape::new(3, 1, 1);
+        let shape_2 = TensorShape::new(3, 1, 1);
+        let shape_res = TensorShape::new(3, 3, 1);
+        let t1 = Tensor {
+            shape: shape_1,
+            strides: TensorStride::new_from_shape(&shape_1),
+            data: vec![1.0, 2.0, 3.0],
+        };
+        let t2 = Tensor {
+            shape: shape_2,
+            strides: TensorStride::new_from_shape(&shape_2),
+            data: vec![3.0, 4.0, 5.0],
+        };
+
+        let mut result = Tensor::new(shape_res);
+
+        let expected_result = Tensor {
+            shape: shape_res,
+            strides: TensorStride::new_from_shape(&shape_res),
+            data: vec![3.0, 6.0, 9.0, 4.0, 8.0, 12.0, 5.0, 10.0, 15.0],
+        };
+        assert!(Tensor::matrix_multiply_transpose_second(&t1, &t2, &mut result).is_ok());
+
+        assert_eq!(expected_result, result);
+    }
+    #[test]
     fn test_matrix_multiply_shape_check() {
         let shape_1 = TensorShape::new(5, 6, 7);
         let shape_2 = TensorShape::new(6, 8, 7);
         let shape_res = TensorShape::new(5, 8, 7);
-        let tensor_1 = Tensor::new(shape_1);
-        let tensor_2 = Tensor::new(shape_2);
-        let tensor_res = Tensor::new(shape_res);
         assert!(Tensor::check_matrix_multiply_dimensions(
-            &tensor_1,
-            &tensor_2,
-            &tensor_res
+            shape_1.clone(),
+            shape_2.clone(),
+            shape_res.clone()
         ));
         assert!(!Tensor::check_matrix_multiply_dimensions(
-            &tensor_2,
-            &tensor_1,
-            &tensor_res
+            shape_2.clone(),
+            shape_1.clone(),
+            shape_res.clone()
         ));
     }
 
-    #[test]
-    fn test_convolution_check_dimensions() {
-        let shape_image = TensorShape::new(17, 25, 7);
-        let shape_kernel = TensorShape::new(3, 3, 7);
-        let shape_result = TensorShape::new(8, 12, 3);
-        let stride: u32 = 2;
-        let result_channel: u32 = 1;
-
-        assert!(Tensor::check_convolution_dimensions(
-            &shape_image,
-            &shape_kernel,
-            stride,
-            &shape_result,
-            result_channel
-        ));
-        assert!(!Tensor::check_convolution_dimensions(
-            &shape_image,
-            &shape_kernel,
-            stride + 1,
-            &shape_result,
-            result_channel
-        ));
-    }
-
-    #[test]
-    fn test_convolution() {
-        let shape_input = TensorShape::new(4, 4, 1);
-        let shape_kernel = TensorShape::new(3, 3, 1);
-        let shape_result = TensorShape::new(2, 2, 1);
-        let stride: u32 = 1;
-        let result_channel: u32 = 0;
-        let tensor_image = Tensor {
-            strides: TensorStride::new_from_shape(&shape_input),
-            shape: shape_input,
-            data: vec![
-                1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 0.5,
-            ],
-        };
-        let tensor_kernel = Tensor {
-            strides: TensorStride::new_from_shape(&shape_kernel),
-            shape: shape_kernel,
-            data: vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
-        };
-        let mut tensor_result = Tensor::new(shape_result);
-        let tensor_expected_result = Tensor {
-            strides: TensorStride::new_from_shape(&shape_result),
-            shape: shape_result,
-            data: vec![3.0, 2.0, 0.0, 2.5],
-        };
-        Tensor::convolution(
-            &tensor_image,
-            &tensor_kernel,
-            stride,
-            &mut tensor_result,
-            result_channel,
-        );
-        assert_eq!(tensor_result, tensor_expected_result);
-    }
 
     #[test]
     fn test_max_pooling() {
@@ -710,6 +1045,36 @@ mod test {
         Tensor::max_pool(&tensor_image, &shape_mask, stride, &mut tensor_result);
 
         assert_eq!(tensor_result, tensor_expected_result);
+    }
+    #[test]
+    fn test_max_pooling_track_output() {
+        let shape_input = TensorShape::new(3, 3, 1);
+        let shape_mask = TensorShape::new(2, 2, 1);
+        let shape_result = TensorShape::new(2, 2, 1);
+        let mut output_track: Vec<u32> = vec![0; shape_result.total_size() as usize];
+        let stride: u32 = 1;
+        let mut tensor_image = Tensor::new(shape_input);
+        assert!(tensor_image
+            .fill_with_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+            .is_ok());
+        let mut tensor_result = Tensor::new(shape_result);
+        let tensor_expected_result = Tensor {
+            strides: TensorStride::new_from_shape(&shape_result),
+            shape: shape_result,
+            data: vec![5.0, 6.0, 8.0, 9.0],
+        };
+        let expected_track_result: Vec<u32> = vec![4, 5, 7, 8];
+        assert!(Tensor::max_pool_track_origin(
+            &tensor_image,
+            &shape_mask,
+            stride,
+            &mut tensor_result,
+            &mut output_track,
+        )
+        .is_ok());
+
+        assert_eq!(tensor_result, tensor_expected_result);
+        assert_eq!(expected_track_result, output_track);
     }
 
     #[test]

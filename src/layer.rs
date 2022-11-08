@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::network::Network;
+use crate::network::{Network, NetworkRunState};
 use crate::tensor::{helper::TensorShape, Tensor};
 
 pub mod convolutional;
@@ -50,7 +50,20 @@ impl SerializedLayer {
 }
 
 pub trait Layer {
-    fn forward(self: &Self, input: &Tensor, output: &mut Tensor);
+    fn forward(self: &mut Self, input: &Tensor, output: &mut Tensor) -> Result<(), &'static str>;
+    // Temporary blank impl so we can test these
+    fn backward(
+        self: &mut Self,
+        _input: &Tensor,
+        _output: &Tensor,
+        _incoming_gradient: &Tensor,
+        _outgoing_gradient: &mut Tensor,
+    ) -> Result<(), &'static str>;
+    fn apply_gradients(self: &mut Self) {}
+    fn clear_gradients(self: &mut Self);
+    fn switch_to_training(self: &mut Self);
+    fn switch_to_inference(self: &mut Self);
+    fn get_run_mode(self: &Self) -> NetworkRunState;
     fn get_input_shape(self: &Self) -> TensorShape;
     fn get_output_shape(self: &Self) -> TensorShape;
     fn get_name(self: &Self) -> String;
